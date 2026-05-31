@@ -27,12 +27,6 @@ export default function App() {
     return <LoadingScreen />;
   }
 
-  // デバッグ用コード（本番では不要）
-  // const resetStorage = async () => {
-  //   await AsyncStorage.clear();
-  //   console.log('AsyncStorage cleared');
-  // };
-  // resetStorage(); // 必要に応じて実行
   return (
     <PaperProvider>
       <NavigationContainer>

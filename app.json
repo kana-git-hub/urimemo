@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "urimemo",
+    "name": "ウリメモ",
     "slug": "urimemo",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -9,11 +9,16 @@
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
+      "resizeMode": "cover",
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.kana.urimemo",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "buildNumber": "2"
     },
     "android": {
       "adaptiveIcon": {
@@ -24,6 +29,11 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "b170707d-1089-4e6f-a808-e971eca7127a"
+      }
     }
   }
 }
