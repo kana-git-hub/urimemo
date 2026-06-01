@@ -8,11 +8,15 @@ import {
   TextInput,
   Modal,
   Text,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import IMETextInput from '../components/IMETextInput';
+import { useIMEField } from '../hooks/useIMEField';
 
 const A = {
   bg: '#F4F6FB',
@@ -30,8 +34,19 @@ const A = {
 const yen = (n: number) => `¥${n.toLocaleString('ja-JP')}`;
 const num = (n: number) => n.toLocaleString('ja-JP');
 
-type Tab = 'register' | 'summary';
+type Tab = 'register' | 'summary' | 'memo';
 interface Item { id: string; name: string; price: number; count: number }
+interface Memo { id: string; text: string; createdAt: number }
+
+const MEMO_KEY = 'memos';
+
+// 日時を「M月D日 HH:mm」で表示
+function formatMemoDate(ts: number) {
+  const d = new Date(ts);
+  const h = String(d.getHours()).padStart(2, '0');
+  const m = String(d.getMinutes()).padStart(2, '0');
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${h}:${m}`;
+}
 
 // ─── 共通モーダル ──────────────────────────────────────────────────────────────
 function HakModal({ visible, onClose, children }: {
@@ -39,11 +54,16 @@ function HakModal({ visible, onClose, children }: {
 }) {
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
-      <TouchableOpacity activeOpacity={1} onPress={onClose} style={s.overlayBg}>
-        <TouchableOpacity activeOpacity={1} style={s.modalCard}>
-          {children}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <TouchableOpacity activeOpacity={1} onPress={onClose} style={s.overlayBg}>
+          <TouchableOpacity activeOpacity={1} style={s.modalCard}>
+            {children}
+          </TouchableOpacity>
         </TouchableOpacity>
-      </TouchableOpacity>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -64,14 +84,6 @@ function BottomTabBar({ active, onTab, onAdd }: {
         <Text style={[s.tabLabel, active === 'register' && s.tabLabelActive]}>レジ</Text>
       </TouchableOpacity>
 
-      {/* 中央フローティング登録ボタン */}
-      <View style={s.tabCenter}>
-        <TouchableOpacity style={s.centerBtn} onPress={onAdd} activeOpacity={0.85}>
-          <MaterialCommunityIcons name="plus" size={26} color="#fff" />
-        </TouchableOpacity>
-        <Text style={s.centerLabel}>登録</Text>
-      </View>
-
       <TouchableOpacity style={s.tabItem} onPress={() => onTab('summary')} activeOpacity={0.7}>
         <MaterialCommunityIcons
           name="chart-bar"
@@ -79,6 +91,23 @@ function BottomTabBar({ active, onTab, onAdd }: {
           color={active === 'summary' ? A.accent : A.faint}
         />
         <Text style={[s.tabLabel, active === 'summary' && s.tabLabelActive]}>集計</Text>
+      </TouchableOpacity>
+
+      {/* フローティング登録ボタン */}
+      <View style={s.tabCenter}>
+        <TouchableOpacity style={s.centerBtn} onPress={onAdd} activeOpacity={0.85}>
+          <MaterialCommunityIcons name="plus" size={26} color="#fff" />
+        </TouchableOpacity>
+        <Text style={s.centerLabel}>登録</Text>
+      </View>
+
+      <TouchableOpacity style={s.tabItem} onPress={() => onTab('memo')} activeOpacity={0.7}>
+        <MaterialCommunityIcons
+          name="hand-heart-outline"
+          size={23}
+          color={active === 'memo' ? A.accent : A.faint}
+        />
+        <Text style={[s.tabLabel, active === 'memo' && s.tabLabelActive]}>メモ</Text>
       </TouchableOpacity>
     </View>
   );
@@ -93,7 +122,8 @@ function RegisterTab({ items, inc, dec, setCount, resetCounts, openEdit }: {
   resetCounts: () => void;
   openEdit: (item: Item) => void;
 }) {
-  const [searchQuery, setSearchQuery] = useState('');
+  const searchField = useIMEField('');
+  const searchQuery = searchField.value;
   const [sortBy, setSortBy] = useState<'name' | 'price' | 'revenue'>('name');
   const [quickEdit, setQuickEdit] = useState<Item | null>(null);
   const [quickEditValue, setQuickEditValue] = useState('');
@@ -174,9 +204,12 @@ function RegisterTab({ items, inc, dec, setCount, resetCounts, openEdit }: {
       <View style={s.searchBarRow}>
         <View style={s.searchBox}>
           <MaterialCommunityIcons name="magnify" size={16} color={A.faint} />
-          <TextInput
-            value={searchQuery}
-            onChangeText={setSearchQuery}
+          <IMETextInput
+            defaultValue={searchField.initial}
+            onChangeText={searchField.onChangeText}
+            onEndEditing={searchField.commit}
+            onSubmitEditing={searchField.commit}
+            returnKeyType="search"
             placeholder="商品を検索"
             placeholderTextColor={A.faint}
             style={s.searchInput}
@@ -320,13 +353,111 @@ function SummaryTab({ items }: { items: Item[] }) {
   );
 }
 
+// ─── メモタブ（寄贈・交換の記録）────────────────────────────────────────────────
+function MemoTab({ memos, addMemo, updateMemo, removeMemo }: {
+  memos: Memo[];
+  addMemo: (text: string) => void;
+  updateMemo: (id: string, text: string) => void;
+  removeMemo: (id: string) => void;
+}) {
+  const [editing, setEditing] = useState<Memo | null>(null);
+  const [isNew, setIsNew] = useState(false);
+  // 打鍵ごとの再描画（=IME中断・一覧のカクつき）を避けるため draft は ref で保持
+  const draftRef = React.useRef('');
+
+  const openNew = () => { draftRef.current = ''; setEditing(null); setIsNew(true); };
+  const openEdit = (m: Memo) => { draftRef.current = m.text; setEditing(m); setIsNew(false); };
+  const close = () => { draftRef.current = ''; setEditing(null); setIsNew(false); };
+
+  const save = () => {
+    const text = draftRef.current.trim();
+    if (!text) return;
+    if (editing) updateMemo(editing.id, text);
+    else addMemo(text);
+    close();
+  };
+
+  const sorted = [...memos].sort((a, b) => b.createdAt - a.createdAt);
+  const modalVisible = isNew || !!editing;
+
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={s.memoHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={s.pageTitle}>寄贈・交換メモ</Text>
+          <Text style={s.memoSubtitle}>お渡しした本や交換の記録を残せます</Text>
+        </View>
+        <TouchableOpacity style={s.memoAddBtn} onPress={openNew} activeOpacity={0.85}>
+          <MaterialCommunityIcons name="plus" size={22} color="#fff" />
+        </TouchableOpacity>
+      </View>
+
+      <FlatList
+        data={sorted}
+        keyExtractor={m => m.id}
+        contentContainerStyle={s.memoListContent}
+        renderItem={({ item }) => (
+          <TouchableOpacity style={s.memoCard} onPress={() => openEdit(item)} activeOpacity={0.6}>
+            <Text style={s.memoText}>{item.text}</Text>
+            <View style={s.memoMetaRow}>
+              <MaterialCommunityIcons name="clock-outline" size={13} color={A.faint} />
+              <Text style={s.memoDate}>{formatMemoDate(item.createdAt)}</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+        ListEmptyComponent={
+          <View style={s.empty}>
+            <MaterialCommunityIcons name="hand-heart-outline" size={40} color={A.faint} />
+            <Text style={[s.emptyText, { marginTop: 12 }]}>まだメモがありません</Text>
+            <Text style={[s.emptyText, { fontSize: 14, marginTop: 4 }]}>
+              「＋」から「◯◯さんに新刊1冊寄贈」{'\n'}のように記録できます
+            </Text>
+          </View>
+        }
+      />
+
+      <HakModal visible={modalVisible} onClose={close}>
+        <Text style={s.modalTitle}>{editing ? 'メモを編集' : 'メモを追加'}</Text>
+        <TextInput
+          key={editing ? editing.id : 'new'}
+          defaultValue={editing ? editing.text : ''}
+          onChangeText={t => { draftRef.current = t; }}
+          placeholder="例：◯◯さんに新刊を1冊寄贈／△△と既刊を交換"
+          placeholderTextColor={A.faint}
+          style={s.memoInput}
+          multiline
+          autoFocus
+        />
+        <View style={s.modalActions}>
+          {editing ? (
+            <TouchableOpacity
+              style={s.memoDeleteBtn}
+              onPress={() => { removeMemo(editing.id); close(); }}
+            >
+              <MaterialCommunityIcons name="trash-can-outline" size={20} color={A.accent} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={s.btnCancel} onPress={close}>
+              <Text style={s.btnCancelText}>キャンセル</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={s.btnAccent} onPress={save}>
+            <Text style={s.btnAccentText}>{editing ? '保存' : '追加'}</Text>
+          </TouchableOpacity>
+        </View>
+      </HakModal>
+    </View>
+  );
+}
+
 // ─── メインスクリーン ──────────────────────────────────────────────────────────
 const MainScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const isFocused = useIsFocused();
   const [tab, setTab] = useState<Tab>('register');
   const [items, setItems] = useState<Item[]>([]);
+  const [memos, setMemos] = useState<Memo[]>([]);
 
-  useEffect(() => { if (isFocused) loadItems(); }, [isFocused]);
+  useEffect(() => { if (isFocused) { loadItems(); loadMemos(); } }, [isFocused]);
 
   const loadItems = async () => {
     try {
@@ -334,6 +465,28 @@ const MainScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       if (data) setItems(JSON.parse(data));
     } catch (e) {}
   };
+
+  const loadMemos = async () => {
+    try {
+      const data = await AsyncStorage.getItem(MEMO_KEY);
+      if (data) setMemos(JSON.parse(data));
+    } catch (e) {}
+  };
+
+  const saveMemos = async (next: Memo[]) => {
+    setMemos(next);
+    try { await AsyncStorage.setItem(MEMO_KEY, JSON.stringify(next)); } catch (e) {}
+  };
+
+  const addMemo = (text: string) =>
+    saveMemos([
+      { id: Date.now().toString() + Math.random().toString(36).slice(2), text, createdAt: Date.now() },
+      ...memos,
+    ]);
+  const updateMemo = (id: string, text: string) =>
+    saveMemos(memos.map(m => m.id === id ? { ...m, text } : m));
+  const removeMemo = (id: string) =>
+    saveMemos(memos.filter(m => m.id !== id));
 
   const saveItems = async (next: Item[]) => {
     setItems(next);
@@ -365,6 +518,14 @@ const MainScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           />
         )}
         {tab === 'summary' && <SummaryTab items={items} />}
+        {tab === 'memo' && (
+          <MemoTab
+            memos={memos}
+            addMemo={addMemo}
+            updateMemo={updateMemo}
+            removeMemo={removeMemo}
+          />
+        )}
       </SafeAreaView>
 
       <BottomTabBar
@@ -506,6 +667,36 @@ const s = StyleSheet.create({
   barTrack: { flex: 1, height: 7, borderRadius: 3.5, backgroundColor: A.bg, overflow: 'hidden' },
   barFill: { height: '100%', borderRadius: 3.5, backgroundColor: A.accent },
   rankCount: { fontSize: 13.5, color: A.muted, fontVariant: ['tabular-nums'] as any, minWidth: 42, textAlign: 'right' },
+
+  // ── メモ
+  memoHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 24, paddingTop: 20, paddingBottom: 4,
+  },
+  memoSubtitle: { fontSize: 14, color: A.muted, marginTop: -8 },
+  memoAddBtn: {
+    width: 46, height: 46, borderRadius: 14, backgroundColor: A.accent,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  memoListContent: { paddingHorizontal: 24, paddingTop: 14, paddingBottom: 16 },
+  memoCard: {
+    backgroundColor: A.surface,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: A.line,
+    borderRadius: 16, padding: 16, marginBottom: 10,
+  },
+  memoText: { fontSize: 16.5, color: A.ink, lineHeight: 24 },
+  memoMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 10 },
+  memoDate: { fontSize: 13, color: A.faint, fontVariant: ['tabular-nums'] as any },
+  memoInput: {
+    width: '100%', minHeight: 96, borderWidth: 1, borderColor: A.line, borderRadius: 14,
+    padding: 14, fontSize: 17, color: A.ink, marginTop: 14,
+    textAlignVertical: 'top',
+  },
+  memoDeleteBtn: {
+    width: 52, padding: 14, borderRadius: 13,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: A.accentLine,
+    backgroundColor: A.accentSoft, alignItems: 'center', justifyContent: 'center',
+  },
 
   // ── 空状態
   empty: { paddingTop: 64, paddingHorizontal: 24, alignItems: 'center' },

@@ -13,6 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import IMETextInput from '../components/IMETextInput';
+import { useIMEField } from '../hooks/useIMEField';
 
 const A = {
   bg: '#F4F6FB',
@@ -32,22 +34,26 @@ const STORAGE_KEY = 'items';
 
 const AddItemScreen = () => {
   const navigation = useNavigation();
-  const [name, setName] = useState('');
+  const nameField = useIMEField('');
   const [price, setPrice] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const valid = name.trim().length > 0 && parseInt(price, 10) > 0;
+  // 表示・ボタンの見た目用（デバウンス値）。送信時は getCurrent() で最新値を読む。
+  const valid = nameField.value.trim().length > 0 && parseInt(price, 10) > 0;
 
   const handleAdd = async () => {
-    if (!valid || loading) return;
+    if (loading) return;
+    const name = nameField.getCurrent().trim();
+    const priceNum = parseInt(price, 10);
+    if (!name || !(priceNum > 0)) return;
     setLoading(true);
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEY);
       const items = data ? JSON.parse(data) : [];
       items.push({
         id: Date.now().toString() + Math.random().toString(36).slice(2),
-        name: name.trim(),
-        price: parseInt(price, 10),
+        name,
+        price: priceNum,
         count: 0,
       });
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(items));
@@ -77,9 +83,10 @@ const AddItemScreen = () => {
         >
           {/* 商品名 */}
           <Text style={styles.label}>商品名</Text>
-          <TextInput
-            value={name}
-            onChangeText={setName}
+          <IMETextInput
+            defaultValue={nameField.initial}
+            onChangeText={nameField.onChangeText}
+            onEndEditing={nameField.commit}
             placeholder="例：新刊"
             placeholderTextColor={A.faint}
             maxLength={50}
@@ -122,17 +129,17 @@ const AddItemScreen = () => {
             <View style={styles.preview}>
               <Text style={styles.previewLabel}>プレビュー</Text>
               <View style={styles.previewRow}>
-                <Text style={styles.previewName} numberOfLines={1}>{name.trim()}</Text>
+                <Text style={styles.previewName} numberOfLines={1}>{nameField.value.trim()}</Text>
                 <Text style={styles.previewPrice}>{yen(parseInt(price, 10))}</Text>
               </View>
             </View>
           )}
 
-          {/* 登録ボタン */}
+          {/* 登録ボタン（押下時に最新値で検証） */}
           <TouchableOpacity
             style={[styles.submitBtn, !valid && styles.submitBtnDisabled]}
             onPress={handleAdd}
-            disabled={!valid || loading}
+            disabled={loading}
             activeOpacity={0.85}
           >
             <Text style={[styles.submitText, !valid && styles.submitTextDisabled]}>

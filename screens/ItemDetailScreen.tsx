@@ -14,6 +14,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import IMETextInput from '../components/IMETextInput';
+import { useIMEField } from '../hooks/useIMEField';
 
 const A = {
   bg: '#F4F6FB',
@@ -51,22 +53,27 @@ const ItemDetailScreen = () => {
   const route = useRoute<RouteProp<{ ItemDetail: Params }, 'ItemDetail'>>();
   const { item, index } = route.params;
 
-  const [name, setName] = useState(item.name);
+  const nameField = useIMEField(item.name);
   const [price, setPrice] = useState(String(item.price));
   const [loading, setLoading] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
 
-  const valid = name.trim().length > 0 && parseInt(price, 10) > 0;
-  const hasChanges = name.trim() !== item.name || parseInt(price, 10) !== item.price;
+  // 表示・ボタンの見た目用（デバウンス値）。保存時は getCurrent() で最新値を読む。
+  const valid = nameField.value.trim().length > 0 && parseInt(price, 10) > 0;
+  const hasChanges = nameField.value.trim() !== item.name || parseInt(price, 10) !== item.price;
   const canSave = valid && hasChanges;
 
   const handleSave = async () => {
-    if (!canSave || loading) return;
+    if (loading) return;
+    const name = nameField.getCurrent().trim();
+    const priceNum = parseInt(price, 10);
+    if (!name || !(priceNum > 0)) return;
+    if (name === item.name && priceNum === item.price) return;
     setLoading(true);
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEY);
       const items = data ? JSON.parse(data) : [];
-      items[index] = { ...item, name: name.trim(), price: parseInt(price, 10) };
+      items[index] = { ...item, name, price: priceNum };
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(items));
       navigation.goBack();
     } catch (e) {
@@ -125,9 +132,10 @@ const ItemDetailScreen = () => {
 
           {/* 商品名 */}
           <Text style={styles.label}>商品名</Text>
-          <TextInput
-            value={name}
-            onChangeText={setName}
+          <IMETextInput
+            defaultValue={nameField.initial}
+            onChangeText={nameField.onChangeText}
+            onEndEditing={nameField.commit}
             placeholder="商品名を入力"
             placeholderTextColor={A.faint}
             maxLength={50}
@@ -169,17 +177,17 @@ const ItemDetailScreen = () => {
             <View style={styles.preview}>
               <Text style={styles.previewLabel}>変更後</Text>
               <View style={styles.previewRow}>
-                <Text style={styles.previewName} numberOfLines={1}>{name.trim()}</Text>
+                <Text style={styles.previewName} numberOfLines={1}>{nameField.value.trim()}</Text>
                 <Text style={styles.previewPrice}>{yen(parseInt(price, 10))}</Text>
               </View>
             </View>
           )}
 
-          {/* 保存ボタン */}
+          {/* 保存ボタン（押下時に最新値で検証） */}
           <TouchableOpacity
             style={[styles.submitBtn, !canSave && styles.submitBtnDisabled]}
             onPress={handleSave}
-            disabled={!canSave || loading}
+            disabled={loading}
             activeOpacity={0.85}
           >
             <Text style={[styles.submitText, !canSave && styles.submitTextDisabled]}>
