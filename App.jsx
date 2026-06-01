@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { Provider as PaperProvider } from 'react-native-paper';
 
+import MainScreen from './screens/MainScreen';
 import AddItemScreen from './screens/AddItemScreen';
-import ItemListScreen from './screens/ItemListScreen';
 import ItemDetailScreen from './screens/ItemDetailScreen';
 import LoadingScreen from './screens/LoadingScreen';
 
@@ -28,14 +27,12 @@ export default function App() {
   }
 
   return (
-    <PaperProvider>
-      <NavigationContainer>
-        <Stack.Navigator initialRouteName="ItemList">
-          <Stack.Screen name="ItemList" component={ItemListScreen} options={{ title: '商品一覧' }} />
-          <Stack.Screen name="AddItem" component={AddItemScreen} options={{ title: '商品追加' }} />
-          <Stack.Screen name="ItemDetail" component={ItemDetailScreen} options={{ title: '商品詳細' }} />
-        </Stack.Navigator>
-      </NavigationContainer>
-    </PaperProvider>
+    <NavigationContainer>
+      <Stack.Navigator initialRouteName="ItemList" screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="ItemList" component={MainScreen} />
+        <Stack.Screen name="AddItem" component={AddItemScreen} />
+        <Stack.Screen name="ItemDetail" component={ItemDetailScreen} />
+      </Stack.Navigator>
+    </NavigationContainer>
   );
 }

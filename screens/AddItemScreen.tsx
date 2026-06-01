@@ -1,672 +1,211 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
-  KeyboardAvoidingView,
-  ScrollView,
-  Platform,
   StyleSheet,
   TouchableOpacity,
-  Animated,
+  TextInput,
+  Text,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
-import { 
-  Text as PaperText, 
-  TextInput, 
-  Button as PaperButton, 
-  Snackbar,
-  IconButton,
-  Card,
-  Chip,
-} from 'react-native-paper';
-import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-const STORAGE_KEY = 'items';
+const A = {
+  bg: '#F4F6FB',
+  surface: '#FFFFFF',
+  line: '#E3E8F1',
+  ink: '#1B2333',
+  muted: '#79839A',
+  faint: '#A9B1C2',
+  accent: '#667EEA',
+  accentSoft: 'rgba(102,126,234,0.10)',
+  accentLine: 'rgba(102,126,234,0.24)',
+};
 
-// よく使われる価格のプリセット
 const PRICE_PRESETS = [100, 200, 300, 500, 1000, 1500, 2000, 3000];
+const yen = (n: number) => `¥${n.toLocaleString('ja-JP')}`;
+const STORAGE_KEY = 'items';
 
 const AddItemScreen = () => {
   const navigation = useNavigation();
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
-  const [nameError, setNameError] = useState('');
-  const [priceError, setPriceError] = useState('');
-  const [snackbarVisible, setSnackbarVisible] = useState(false);
-  const [snackbarMessage, setSnackbarMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const [formScale] = useState(new Animated.Value(0.95));
 
-  // フォームアニメーション
-  useEffect(() => {
-    Animated.spring(formScale, {
-      toValue: 1,
-      useNativeDriver: true,
-      tension: 100,
-      friction: 8,
-    }).start();
-  }, []);
-
-  const validateInputs = () => {
-    let hasError = false;
-    setNameError('');
-    setPriceError('');
-    
-    if (!name.trim()) {
-      setNameError('商品名を入力してください');
-      hasError = true;
-    } else if (name.trim().length > 50) {
-      setNameError('商品名は50文字以内で入力してください');
-      hasError = true;
-    }
-    
-    if (!price.trim()) {
-      setPriceError('価格を入力してください');
-      hasError = true;
-    } else {
-      const numericPrice = parseInt(price, 10);
-      if (isNaN(numericPrice)) {
-        setPriceError('価格は数字で入力してください');
-        hasError = true;
-      } else if (numericPrice <= 0) {
-        setPriceError('価格は1円以上で入力してください');
-        hasError = true;
-      } else if (numericPrice > 999999) {
-        setPriceError('価格は999,999円以下で入力してください');
-        hasError = true;
-      }
-    }
-    
-    return !hasError;
-  };
+  const valid = name.trim().length > 0 && parseInt(price, 10) > 0;
 
   const handleAdd = async () => {
-    if (loading) return;
-    
-    if (!validateInputs()) return;
-    
+    if (!valid || loading) return;
     setLoading(true);
-
-    const newItem = {
-      id: Date.now().toString() + Math.random().toString(36).slice(2),
-      name: name.trim(),
-      price: parseInt(price, 10),
-      count: 0,
-    };
-
     try {
-      const existingData = await AsyncStorage.getItem(STORAGE_KEY);
-      const items = existingData ? JSON.parse(existingData) : [];
-      
-      // 同じ名前の商品がないかチェック
-      const duplicateItem = items.find(item => 
-        item.name.toLowerCase() === newItem.name.toLowerCase()
-      );
-      
-      if (duplicateItem) {
-        setNameError('同じ名前の商品が既に存在します');
-        setLoading(false);
-        return;
-      }
-      
-      const updatedItems = [...items, newItem];
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedItems));
-      
-      setSnackbarMessage('商品を登録しました！');
-      setSnackbarVisible(true);
-      
-      // 成功時のアニメーション
-      Animated.sequence([
-        Animated.spring(formScale, {
-          toValue: 1.05,
-          useNativeDriver: true,
-          tension: 100,
-          friction: 6,
-        }),
-        Animated.spring(formScale, {
-          toValue: 1,
-          useNativeDriver: true,
-          tension: 100,
-          friction: 8,
-        }),
-      ]).start();
-      
-    } catch (error) {
-      setSnackbarMessage('登録に失敗しました');
-      setSnackbarVisible(true);
-      console.error('保存エラー:', error);
+      const data = await AsyncStorage.getItem(STORAGE_KEY);
+      const items = data ? JSON.parse(data) : [];
+      items.push({
+        id: Date.now().toString() + Math.random().toString(36).slice(2),
+        name: name.trim(),
+        price: parseInt(price, 10),
+        count: 0,
+      });
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+      navigation.goBack();
+    } catch (e) {
     } finally {
       setLoading(false);
     }
   };
 
-  const handlePricePresetSelect = (presetPrice: number) => {
-    setPrice(presetPrice.toString());
-    setPriceError('');
-  };
-
-  const clearForm = () => {
-    setName('');
-    setPrice('');
-    setNameError('');
-    setPriceError('');
-  };
-
-  const formatPriceDisplay = (value: string) => {
-    const numericValue = parseInt(value, 10);
-    if (isNaN(numericValue)) return '';
-    return `¥${numericValue.toLocaleString()}`;
-  };
-
-  useEffect(() => {
-    if (snackbarVisible) {
-      const timer = setTimeout(() => {
-        setSnackbarVisible(false);
-        if (snackbarMessage === '商品を登録しました！') {
-          navigation.goBack();
-        }
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [snackbarVisible, snackbarMessage, navigation]);
-
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <LinearGradient
-        colors={['#4f46e5', '#7c3aed', '#2563eb']}
-        locations={[0, 0.5, 1]}
-        style={styles.gradient}
-      >
+    <SafeAreaView style={styles.safe}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {/* ヘッダー */}
         <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-            <IconButton
-              icon="arrow-left"
-              size={24}
-              iconColor="white"
-              style={styles.backIcon}
-            />
+          <TouchableOpacity style={styles.headerBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
+            <MaterialCommunityIcons name="arrow-left" size={20} color={A.ink} />
           </TouchableOpacity>
-          <PaperText style={styles.headerTitle}>商品を登録</PaperText>
-          <TouchableOpacity 
-            style={styles.clearButton}
-            onPress={clearForm}
-          >
-            <IconButton
-              icon="refresh"
-              size={20}
-              iconColor="white"
-              style={styles.clearIcon}
-            />
-          </TouchableOpacity>
+          <Text style={styles.headerTitle}>商品を登録</Text>
+          <View style={{ width: 40 }} />
         </View>
 
-        <ScrollView 
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
+        <ScrollView
+          contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <Animated.View style={[styles.formWrapper, { transform: [{ scale: formScale }] }]}>
-            <Card style={styles.formContainer}>
-              <Card.Content style={styles.cardContent}>
-                
-                {/* 商品名入力 */}
-                <View style={styles.inputSection}>
-                  <View style={styles.inputHeader}>
-                    <IconButton
-                      icon="tag"
-                      size={20}
-                      iconColor="#667eea"
-                      style={styles.inputIcon}
-                    />
-                    <PaperText style={styles.inputLabel}>商品名</PaperText>
-                  </View>
-                  <TextInput
-                    mode="outlined"
-                    value={name}
-                    onChangeText={setName}
-                    placeholder="例: 新刊、既刊..."
-                    style={styles.input}
-                    error={!!nameError}
-                    maxLength={50}
-                    autoFocus
-                    theme={{
-                      colors: {
-                        primary: '#667eea',
-                        background: 'white',
-                        outline: nameError ? '#f44336' : '#e2e8f0',
-                      }
-                    }}
-                    right={
-                      name.length > 0 ? (
-                        <TextInput.Affix 
-                          text={`${name.length}/50`} 
-                          textStyle={styles.characterCount}
-                        />
-                      ) : null
-                    }
-                  />
-                  {nameError ? (
-                    <View style={styles.errorContainer}>
-                      <IconButton
-                        icon="alert-circle"
-                        size={16}
-                        iconColor="#f44336"
-                        style={styles.errorIcon}
-                      />
-                      <PaperText style={styles.errorText}>{nameError}</PaperText>
-                    </View>
-                  ) : null}
-                </View>
-
-                {/* 価格入力 */}
-                <View style={styles.inputSection}>
-                  <View style={styles.inputHeader}>
-                    <IconButton
-                      icon="currency-jpy"
-                      size={20}
-                      iconColor="#667eea"
-                      style={styles.inputIcon}
-                    />
-                    <PaperText style={styles.inputLabel}>価格</PaperText>
-                    {price && !priceError && (
-                      <PaperText style={styles.pricePreview}>
-                        {formatPriceDisplay(price)}
-                      </PaperText>
-                    )}
-                  </View>
-                  <TextInput
-                    mode="outlined"
-                    value={price}
-                    onChangeText={setPrice}
-                    placeholder="価格を入力（円）"
-                    keyboardType="numeric"
-                    style={styles.input}
-                    error={!!priceError}
-                    theme={{
-                      colors: {
-                        primary: '#667eea',
-                        background: 'white',
-                        outline: priceError ? '#f44336' : '#e2e8f0',
-                      }
-                    }}
-                  />
-                  {priceError ? (
-                    <View style={styles.errorContainer}>
-                      <IconButton
-                        icon="alert-circle"
-                        size={16}
-                        iconColor="#f44336"
-                        style={styles.errorIcon}
-                      />
-                      <PaperText style={styles.errorText}>{priceError}</PaperText>
-                    </View>
-                  ) : null}
-                  
-                  {/* 価格プリセット */}
-                  <View style={styles.presetsContainer}>
-                    <PaperText style={styles.presetsLabel}>よく使われる価格</PaperText>
-                    <View style={styles.presetsGrid}>
-                      {PRICE_PRESETS.map((presetPrice) => (
-                        <TouchableOpacity
-                          key={presetPrice}
-                          onPress={() => handlePricePresetSelect(presetPrice)}
-                        >
-                          <Chip
-                            style={[
-                              styles.priceChip,
-                              price === presetPrice.toString() && styles.selectedPriceChip
-                            ]}
-                            textStyle={[
-                              styles.priceChipText,
-                              price === presetPrice.toString() && styles.selectedPriceChipText
-                            ]}
-                            compact
-                          >
-                            ¥{presetPrice.toLocaleString()}
-                          </Chip>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-                </View>
-
-                {/* プレビューカード */}
-                {name.trim() && price && !nameError && !priceError && (
-                  <View style={styles.previewSection}>
-                    <PaperText style={styles.previewLabel}>プレビュー</PaperText>
-                    <Card style={styles.previewCard}>
-                      <Card.Content style={styles.previewContent}>
-                        <View style={styles.previewHeader}>
-                          <View style={styles.previewInfo}>
-                            <PaperText style={styles.previewName} numberOfLines={1}>
-                              {name.trim()}
-                            </PaperText>
-                            <PaperText style={styles.previewPrice}>
-                              {formatPriceDisplay(price)}
-                            </PaperText>
-                          </View>
-                          <View style={styles.previewBadge}>
-                            <PaperText style={styles.previewBadgeText}>NEW</PaperText>
-                          </View>
-                        </View>
-                      </Card.Content>
-                    </Card>
-                  </View>
-                )}
-
-                {/* 登録ボタン */}
-                <View style={styles.buttonContainer}>
-                  <PaperButton
-                    mode="contained"
-                    onPress={handleAdd}
-                    style={[
-                      styles.submitButton,
-                      (!name.trim() || !price || !!nameError || !!priceError) && styles.submitButtonDisabled
-                    ]}
-                    contentStyle={styles.submitButtonContent}
-                    disabled={loading || !name.trim() || !price || !!nameError || !!priceError}
-                    loading={loading}
-                    buttonColor="#667eea"
-                    labelStyle={styles.submitButtonLabel}
-                    icon="plus-circle"
-                  >
-                    {loading ? '登録中...' : '商品を登録する'}
-                  </PaperButton>
-                  
-                  <TouchableOpacity 
-                    style={styles.cancelButton}
-                    onPress={() => navigation.goBack()}
-                  >
-                    <PaperText style={styles.cancelButtonText}>キャンセル</PaperText>
-                  </TouchableOpacity>
-                </View>
-              </Card.Content>
-            </Card>
-          </Animated.View>
-        </ScrollView>
-      </LinearGradient>
-
-      <Snackbar
-        visible={snackbarVisible}
-        onDismiss={() => setSnackbarVisible(false)}
-        duration={2000}
-        style={[
-          styles.snackbar,
-          {
-            backgroundColor: snackbarMessage === '商品を登録しました！' 
-              ? '#4caf50' 
-              : '#f44336'
-          }
-        ]}
-      >
-        <View style={styles.snackbarContent}>
-          <IconButton
-            icon={snackbarMessage === '商品を登録しました！' ? 'check-circle' : 'alert-circle'}
-            size={20}
-            iconColor="white"
-            style={styles.snackbarIcon}
+          {/* 商品名 */}
+          <Text style={styles.label}>商品名</Text>
+          <TextInput
+            value={name}
+            onChangeText={setName}
+            placeholder="例：新刊"
+            placeholderTextColor={A.faint}
+            maxLength={50}
+            style={styles.textInput}
+            autoFocus
           />
-          <PaperText style={styles.snackbarText}>{snackbarMessage}</PaperText>
-        </View>
-      </Snackbar>
-    </KeyboardAvoidingView>
+
+          {/* 価格 */}
+          <Text style={[styles.label, { marginTop: 24 }]}>価格</Text>
+          <View style={styles.priceRow}>
+            <Text style={styles.yenPrefix}>¥</Text>
+            <TextInput
+              value={price}
+              onChangeText={v => setPrice(v.replace(/[^0-9]/g, ''))}
+              keyboardType="numeric"
+              placeholder="0"
+              placeholderTextColor={A.faint}
+              style={styles.priceInput}
+            />
+          </View>
+
+          {/* 価格プリセット */}
+          <View style={styles.presetsRow}>
+            {PRICE_PRESETS.map(p => (
+              <TouchableOpacity
+                key={p}
+                style={[styles.preset, price === String(p) && styles.presetActive]}
+                onPress={() => setPrice(String(p))}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.presetText, price === String(p) && styles.presetTextActive]}>
+                  ¥{p.toLocaleString('ja-JP')}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* プレビュー */}
+          {valid && (
+            <View style={styles.preview}>
+              <Text style={styles.previewLabel}>プレビュー</Text>
+              <View style={styles.previewRow}>
+                <Text style={styles.previewName} numberOfLines={1}>{name.trim()}</Text>
+                <Text style={styles.previewPrice}>{yen(parseInt(price, 10))}</Text>
+              </View>
+            </View>
+          )}
+
+          {/* 登録ボタン */}
+          <TouchableOpacity
+            style={[styles.submitBtn, !valid && styles.submitBtnDisabled]}
+            onPress={handleAdd}
+            disabled={!valid || loading}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.submitText, !valid && styles.submitTextDisabled]}>
+              {loading ? '登録中...' : '商品を登録'}
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  gradient: {
-    flex: 1,
-  },
+  safe: { flex: 1, backgroundColor: A.bg },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 16,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12,
   },
-  backButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+  headerBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: A.line,
+    backgroundColor: A.surface, alignItems: 'center', justifyContent: 'center',
   },
-  backIcon: {
-    margin: 0,
+  headerTitle: { fontSize: 19, fontWeight: '700', color: A.ink },
+  scroll: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 40 },
+
+  label: { fontSize: 14.5, fontWeight: '700', color: A.muted, letterSpacing: 0.4, marginBottom: 9 },
+  textInput: {
+    borderWidth: 1, borderColor: A.line, borderRadius: 14,
+    paddingHorizontal: 16, paddingVertical: 15,
+    fontSize: 18, color: A.ink, backgroundColor: A.surface,
   },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: 'white',
-    textAlign: 'center',
-    flex: 1,
+  priceRow: {
+    flexDirection: 'row', alignItems: 'center',
+    borderWidth: 1, borderColor: A.line, borderRadius: 14,
+    paddingHorizontal: 16, backgroundColor: A.surface,
   },
-  clearButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+  yenPrefix: { fontSize: 24, color: A.faint, fontWeight: '600' },
+  priceInput: {
+    flex: 1, paddingVertical: 15, paddingHorizontal: 8,
+    fontSize: 27, fontWeight: '700', color: A.ink,
+    fontVariant: ['tabular-nums'] as any,
   },
-  clearIcon: {
-    margin: 0,
+  presetsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
+  preset: {
+    borderWidth: StyleSheet.hairlineWidth, borderColor: A.line,
+    backgroundColor: A.surface, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 8,
   },
-  scrollContent: {
-    flexGrow: 1,
-    padding: 20,
-    paddingBottom: 40,
+  presetActive: { borderColor: A.accentLine, backgroundColor: A.accentSoft },
+  presetText: { fontSize: 14.5, fontWeight: '600', color: A.muted },
+  presetTextActive: { color: A.accent },
+
+  preview: {
+    marginTop: 26, padding: 18,
+    borderWidth: 1, borderColor: A.accentLine,
+    borderStyle: 'dashed', borderRadius: 16, backgroundColor: A.accentSoft,
   },
-  formWrapper: {
-    flex: 1,
-  },
-  formContainer: {
-    borderRadius: 24,
-    elevation: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 12,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    backgroundColor: 'white',
-  },
-  cardContent: {
-    padding: 28,
-  },
-  inputSection: {
-    marginBottom: 28,
-  },
-  inputHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  inputIcon: {
-    margin: 0,
-    marginRight: 8,
-    backgroundColor: 'rgba(102, 126, 234, 0.1)',
-    borderRadius: 8,
-  },
-  inputLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2c3e50',
-    flex: 1,
-  },
-  pricePreview: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#4caf50',
-  },
-  input: {
-    backgroundColor: 'white',
-    fontSize: 16,
-  },
-  characterCount: {
-    fontSize: 12,
-    color: '#94a3b8',
-  },
-  errorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  errorIcon: {
-    margin: 0,
-    marginRight: 4,
-  },
-  errorText: {
-    color: '#f44336',
-    fontSize: 14,
-    flex: 1,
-  },
-  presetsContainer: {
-    marginTop: 16,
-  },
-  presetsLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#64748b',
-    marginBottom: 12,
-  },
-  presetsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  priceChip: {
-    backgroundColor: 'rgba(102, 126, 234, 0.1)',
-    borderColor: 'rgba(102, 126, 234, 0.3)',
-    borderWidth: 1,
-  },
-  selectedPriceChip: {
-    backgroundColor: '#667eea',
-    borderColor: '#667eea',
-  },
-  priceChipText: {
-    fontSize: 12,
-    color: '#667eea',
-    fontWeight: '500',
-  },
-  selectedPriceChipText: {
-    color: 'white',
-  },
-  previewSection: {
-    marginBottom: 28,
-  },
-  previewLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2c3e50',
-    marginBottom: 12,
-  },
-  previewCard: {
-    backgroundColor: 'rgba(102, 126, 234, 0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(102, 126, 234, 0.2)',
-    borderStyle: 'dashed',
-    elevation: 0,
-    shadowColor: 'transparent',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0,
-    shadowRadius: 0,
-  },
-  previewContent: {
-    padding: 16,
-  },
-  previewHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  previewInfo: {
-    flex: 1,
-  },
-  previewName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2c3e50',
-    marginBottom: 4,
-  },
+  previewLabel: { fontSize: 13, color: A.accent, fontWeight: '700', letterSpacing: 0.6, marginBottom: 8 },
+  previewRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  previewName: { fontSize: 17, fontWeight: '600', color: A.ink, flex: 1, marginRight: 8 },
   previewPrice: {
-    fontSize: 14,
-    color: '#4caf50',
-    fontWeight: '500',
+    fontSize: 19, fontWeight: '700', color: A.ink,
+    fontVariant: ['tabular-nums'] as any,
   },
-  previewBadge: {
-    backgroundColor: '#22c55e',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+
+  submitBtn: {
+    marginTop: 24, padding: 16, borderRadius: 16,
+    backgroundColor: A.accent, alignItems: 'center',
   },
-  previewBadgeText: {
-    color: 'white',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  buttonContainer: {
-    gap: 16,
-  },
-  submitButton: {
-    borderRadius: 16,
-    elevation: 6,
-    shadowColor: '#667eea',
-    shadowOffset: {
-      width: 0,
-      height: 6,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-  },
-  submitButtonDisabled: {
-    elevation: 2,
-    shadowOpacity: 0.1,
-  },
-  submitButtonContent: {
-    paddingVertical: 12,
-  },
-  submitButtonLabel: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  cancelButton: {
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  cancelButtonText: {
-    fontSize: 16,
-    color: '#64748b',
-    fontWeight: '500',
-  },
-  snackbar: {
-    borderRadius: 12,
-    margin: 20,
-    elevation: 8,
-  },
-  snackbarContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  snackbarIcon: {
-    margin: 0,
-    marginRight: 8,
-  },
-  snackbarText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '500',
-    flex: 1,
-  },
+  submitBtnDisabled: { backgroundColor: A.line },
+  submitText: { fontSize: 17.5, fontWeight: '700', color: '#fff' },
+  submitTextDisabled: { color: A.faint },
 });
 
 export default AddItemScreen;

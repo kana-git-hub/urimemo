@@ -4,21 +4,30 @@ import {
   FlatList,
   StyleSheet,
   TouchableOpacity,
+  TextInput,
+  Modal,
+  Text,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused } from '@react-navigation/native';
-import { 
-  Dialog, 
-  Portal, 
-  Button as PaperButton, 
-  Text as PaperText,
-  FAB,
-  IconButton,
-  TextInput,
-  Searchbar,
-  Chip,
-} from 'react-native-paper';
-import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+
+const A = {
+  bg: '#FAF8F5',
+  surface: '#FFFFFF',
+  line: '#ECE7E0',
+  ink: '#221C18',
+  muted: '#8C837A',
+  faint: '#B6ADA3',
+  accent: '#9A4A3A',
+  accentSoft: 'rgba(154,74,58,0.09)',
+  accentLine: 'rgba(154,74,58,0.22)',
+  pos: '#3F7A5E',
+};
+
+const yen = (n: number) => `¥${n.toLocaleString('ja-JP')}`;
+const num = (n: number) => n.toLocaleString('ja-JP');
 
 interface Item {
   id: string;
@@ -27,1094 +36,344 @@ interface Item {
   count: number;
 }
 
-interface ItemListScreenProps {
+interface Props {
   navigation: any;
 }
 
-const ItemListScreen: React.FC<ItemListScreenProps> = ({ navigation }) => {
+function HakModal({ visible, onClose, children }: { visible: boolean; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity activeOpacity={1} onPress={onClose} style={styles.overlayBg}>
+        <TouchableOpacity activeOpacity={1} style={styles.modalCard}>
+          {children}
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+const ItemListScreen: React.FC<Props> = ({ navigation }) => {
   const isFocused = useIsFocused();
   const [items, setItems] = useState<Item[]>([]);
-  const [deleteDialogVisible, setDeleteDialogVisible] = useState(false);
-  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
-  const [quickEditVisible, setQuickEditVisible] = useState(false);
-  const [quickEditItem, setQuickEditItem] = useState<Item | null>(null);
-  const [quickEditValue, setQuickEditValue] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'price' | 'revenue'>('name');
-  const [filteredItems, setFilteredItems] = useState<Item[]>([]);
-  const [resetDialogVisible, setResetDialogVisible] = useState(false);
-  const [searchExpanded, setSearchExpanded] = useState(false);
+  const [quickEdit, setQuickEdit] = useState<Item | null>(null);
+  const [quickEditValue, setQuickEditValue] = useState('');
+  const [confirmReset, setConfirmReset] = useState(false);
 
   useEffect(() => {
-    loadItems();
+    if (isFocused) loadItems();
   }, [isFocused]);
-
-  useEffect(() => {
-    filterAndSortItems();
-  }, [items, searchQuery, sortBy]);
-
-  const filterAndSortItems = () => {
-    let filtered = items.filter(item =>
-      item.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-
-    filtered.sort((a, b) => {
-      switch (sortBy) {
-        case 'name':
-          return a.name.localeCompare(b.name);
-        case 'price':
-          return b.price - a.price;
-        case 'revenue':
-          return (b.price * (b.count || 0)) - (a.price * (a.count || 0));
-        default:
-          return 0;
-      }
-    });
-
-    setFilteredItems(filtered);
-  };
 
   const loadItems = async () => {
     try {
       const data = await AsyncStorage.getItem('items');
-      if (data) {
-        const parsed = JSON.parse(data);
-        setItems(parsed);
-      }
-    } catch (error) {
-      console.error('データの読み込みエラー:', error);
-    }
+      if (data) setItems(JSON.parse(data));
+    } catch (e) {}
   };
 
-  const saveItems = async (newItems: Item[]) => {
+  const saveItems = async (next: Item[]) => {
+    setItems(next);
     try {
-      setItems(newItems);
-      await AsyncStorage.setItem('items', JSON.stringify(newItems));
-    } catch (error) {
-      console.error('データの保存エラー:', error);
-    }
+      await AsyncStorage.setItem('items', JSON.stringify(next));
+    } catch (e) {}
   };
 
-  const increaseCount = (id: string) => {
-    const updated = items.map((item) =>
-      item.id === id ? { ...item, count: (item.count || 0) + 1 } : item
-    );
-    saveItems(updated);
-  };
+  const inc = (id: string) =>
+    saveItems(items.map(i => i.id === id ? { ...i, count: (i.count || 0) + 1 } : i));
 
-  const decreaseCount = (id: string) => {
-    const updated = items.map((item) =>
-      item.id === id && item.count > 0 ? { ...item, count: item.count - 1 } : item
-    );
-    saveItems(updated);
-  };
+  const dec = (id: string) =>
+    saveItems(items.map(i => i.id === id && i.count > 0 ? { ...i, count: i.count - 1 } : i));
 
-  const deleteItem = async (id: string) => {
-    const updated = items.filter((item) => item.id !== id);
-    await saveItems(updated);
-  };
+  const setCount = (id: string, count: number) =>
+    saveItems(items.map(i => i.id === id ? { ...i, count } : i));
 
-  const getTotal = () => {
-    return items.reduce(
-      (total, item) => total + (item.price * (item.count || 0)),
-      0
-    );
-  };
+  const resetCounts = () =>
+    saveItems(items.map(i => ({ ...i, count: 0 })));
 
-  const getTotalItemsSold = () => {
-    return items.reduce(
-      (total, item) => total + (item.count || 0),
-      0
-    );
-  };
+  const total = items.reduce((s, i) => s + i.price * (i.count || 0), 0);
+  const units = items.reduce((s, i) => s + (i.count || 0), 0);
 
-  const confirmDeleteItem = (id: string) => {
-    setDeleteTargetId(id);
-    setDeleteDialogVisible(true);
-  };
-
-  const handleDeleteConfirmed = async () => {
-    if (deleteTargetId) {
-      await deleteItem(deleteTargetId);
-      setDeleteDialogVisible(false);
-      setDeleteTargetId(null);
-    }
-  };
-
-  const openQuickEdit = (item: Item) => {
-    setQuickEditItem(item);
-    setQuickEditValue((item.count || 0).toString());
-    setQuickEditVisible(true);
-  };
-
-  const handleQuickEditSave = async () => {
-    if (!quickEditItem) return;
-    
-    const newCount = parseInt(quickEditValue, 10);
-    if (isNaN(newCount) || newCount < 0) return;
-
-    const updated = items.map((item) =>
-      item.id === quickEditItem.id ? { ...item, count: newCount } : item
-    );
-    await saveItems(updated);
-    setQuickEditVisible(false);
-    setQuickEditItem(null);
-  };
-
-  const confirmResetAllCounts = () => {
-    setResetDialogVisible(true);
-  };
-
-  const resetAllCounts = async () => {
-    const updated = items.map(item => ({ ...item, count: 0 }));
-    await saveItems(updated);
-    setResetDialogVisible(false);
-  };
-
-  const toggleSearch = () => {
-    setSearchExpanded(!searchExpanded);
-    if (searchExpanded && searchQuery) {
-      setSearchQuery('');
-    }
-  };
-
-  const renderItem = ({ item, index }: { item: Item; index: number }) => (
-    <TouchableOpacity
-      style={styles.itemCard}
-      activeOpacity={0.8}
-    >
-      <View style={styles.itemContent}>
-        <View style={styles.itemHeader}>
-          <View style={styles.itemInfo}>
-            <PaperText style={styles.itemName} numberOfLines={1}>
-              {item.name}
-            </PaperText>
-            <PaperText style={styles.itemPrice}>
-              ¥{item.price.toLocaleString()}
-            </PaperText>
-          </View>
-          
-          <View style={styles.headerActions}>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.editButton]}
-              onPress={() => navigation.navigate('ItemDetail', { item, index })}
-            >
-              <IconButton
-                icon="pencil"
-                size={16}
-                iconColor="#667eea"
-                style={styles.actionIcon}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.deleteButton]}
-              onPress={() => confirmDeleteItem(item.id)}
-            >
-              <IconButton
-                icon="delete"
-                size={16}
-                iconColor="#ef4444"
-                style={styles.actionIcon}
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
-        
-        <View style={styles.statsAndControls}>
-          <View style={styles.itemStatsCompact}>
-            <View style={styles.statItem}>
-              <View style={styles.statBadge}>
-                <PaperText style={styles.statLabelCompact}>販売</PaperText>
-                <PaperText style={styles.statValueCompact}>{item.count || 0}</PaperText>
-              </View>
-            </View>
-            <View style={styles.statItem}>
-              <View style={styles.revenueBadge}>
-                <PaperText style={styles.statLabelCompact}>売上</PaperText>
-                <PaperText style={styles.revenueValueCompact}>
-                  ¥{(item.price * (item.count || 0)).toLocaleString()}
-                </PaperText>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.quantityControlsCompact}>
-            <TouchableOpacity
-              style={[styles.quantityButton, styles.decreaseButton]}
-              onPress={() => decreaseCount(item.id)}
-              disabled={item.count === 0}
-            >
-              <IconButton
-                icon="minus"
-                size={18}
-                iconColor="#f59e0b"
-                style={styles.quantityIcon}
-              />
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.quantityDisplay}
-              onPress={() => openQuickEdit(item)}
-            >
-              <PaperText style={styles.quantityText}>{item.count || 0}</PaperText>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[styles.quantityButton, styles.increaseButton]}
-              onPress={() => increaseCount(item.id)}
-            >
-              <IconButton
-                icon="plus"
-                size={18}
-                iconColor="#10b981"
-                style={styles.quantityIcon}
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </TouchableOpacity>
+  let list = items.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  list = [...list].sort((a, b) =>
+    sortBy === 'name' ? a.name.localeCompare(b.name, 'ja') :
+    sortBy === 'price' ? b.price - a.price :
+    b.price * b.count - a.price * a.count
   );
 
-  const EmptyState = () => (
-    <View style={styles.emptyState}>
-      <View style={styles.emptyIconContainer}>
-        <IconButton
-          icon="package-variant"
-          size={64}
-          iconColor="#e2e8f0"
-          style={styles.emptyIcon}
-        />
+  const openEdit = (item: Item) => {
+    const index = items.findIndex(i => i.id === item.id);
+    navigation.navigate('ItemDetail', { item, index });
+  };
+
+  const renderItem = ({ item }: { item: Item }) => (
+    <View style={styles.row}>
+      <TouchableOpacity style={styles.rowInfo} onPress={() => openEdit(item)} activeOpacity={0.7}>
+        <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
+        <View style={styles.rowMeta}>
+          <Text style={styles.itemPrice}>{yen(item.price)}</Text>
+          <Text style={[styles.itemRevenue, { color: item.count ? A.pos : A.faint }]}>
+            売上 {yen(item.price * (item.count || 0))}
+          </Text>
+        </View>
+      </TouchableOpacity>
+      <View style={styles.controls}>
+        <TouchableOpacity
+          style={[styles.ctrlBtn, styles.ctrlMinus]}
+          onPress={() => dec(item.id)}
+          disabled={!item.count}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons name="minus" size={16} color={item.count ? A.ink : A.faint} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.ctrlCount}
+          onPress={() => { setQuickEdit(item); setQuickEditValue(String(item.count || 0)); }}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.countText}>{item.count || 0}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.ctrlBtn, styles.ctrlPlus]} onPress={() => inc(item.id)} activeOpacity={0.8}>
+          <MaterialCommunityIcons name="plus" size={18} color="#fff" />
+        </TouchableOpacity>
       </View>
-      <PaperText style={styles.emptyTitle}>商品がありません</PaperText>
-      <PaperText style={styles.emptySubtitle}>
-        「+」ボタンから商品を登録してください
-      </PaperText>
     </View>
   );
 
   return (
-    <View style={styles.container}>
-      <LinearGradient
-        colors={['#667eea', '#764ba2']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.gradient}
-      >
-        <View style={styles.header}>
-          <View style={styles.totalContainer}>
-            <View style={styles.totalHeader}>
-              <View style={styles.leftSection}>
-                <View style={styles.trendIconContainer}>
-                  <IconButton
-                    icon="trending-up"
-                    size={22}
-                    iconColor="#10b981"
-                    style={styles.trendIcon}
-                  />
-                </View>
-                <PaperText style={styles.totalLabel}>本日の売上</PaperText>
-              </View>
-              <TouchableOpacity
-                style={styles.resetButtonContainer}
-                onPress={confirmResetAllCounts}
-              >
-                <IconButton
-                  icon="refresh"
-                  size={20}
-                  iconColor="#ef4444"
-                  style={styles.resetIcon}
-                />
-              </TouchableOpacity>
-            </View>
-            <PaperText style={styles.totalValue}>
-              ¥{getTotal().toLocaleString()}
-            </PaperText>
-            <View style={styles.totalBadge}>
-              <PaperText style={styles.badgeText}>
-                {getTotalItemsSold()}個 販売済み
-              </PaperText>
-            </View>
+    <SafeAreaView style={styles.safe}>
+      {/* ヘッダー：売上サマリー */}
+      <View style={styles.headerArea}>
+        <View style={styles.totalRow}>
+          <View>
+            <Text style={styles.totalLabel}>本日の売上</Text>
+            <Text style={styles.totalValue}>
+              <Text style={styles.yenSign}>¥</Text>{num(total)}
+            </Text>
           </View>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => setConfirmReset(true)} activeOpacity={0.7}>
+            <MaterialCommunityIcons name="refresh" size={18} color={A.muted} />
+          </TouchableOpacity>
         </View>
+        <View style={styles.statsRow}>
+          <Text style={styles.stat}>販売 <Text style={styles.statBold}>{units}</Text> 点</Text>
+          <Text style={styles.stat}>商品 <Text style={styles.statBold}>{items.length}</Text> 種</Text>
+        </View>
+      </View>
 
-        <View style={styles.searchContainer}>
-          <View style={styles.searchHeader}>
-            <TouchableOpacity 
-              style={[styles.searchIconButton, searchExpanded && styles.searchIconButtonActive]}
-              onPress={toggleSearch}
-            >
-              <IconButton
-                icon={searchExpanded ? "close" : "magnify"}
-                size={20}
-                iconColor="#ffffff"
-                style={styles.searchIcon}
-              />
-            </TouchableOpacity>
+      {/* 検索 + ソート */}
+      <View style={styles.searchBarRow}>
+        <View style={styles.searchBox}>
+          <MaterialCommunityIcons name="magnify" size={16} color={A.faint} />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="商品を検索"
+            placeholderTextColor={A.faint}
+            style={styles.searchInput}
+          />
+        </View>
+        {(['name', 'price', 'revenue'] as const).map(s => (
+          <TouchableOpacity
+            key={s}
+            style={[styles.sortChip, sortBy === s && styles.sortChipActive]}
+            onPress={() => setSortBy(s)}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.sortChipText, sortBy === s && styles.sortChipTextActive]}>
+              {s === 'name' ? '名前' : s === 'price' ? '価格' : '売上'}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
-            <View style={styles.sortChipsCompact}>
-              <TouchableOpacity
-                style={[styles.sortChip, sortBy === 'name' && styles.selectedChip]}
-                onPress={() => setSortBy('name')}
-              >
-                <PaperText style={[styles.chipText, sortBy === 'name' && styles.selectedChipText]}>
-                  名前
-                </PaperText>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.sortChip, sortBy === 'price' && styles.selectedChip]}
-                onPress={() => setSortBy('price')}
-              >
-                <PaperText style={[styles.chipText, sortBy === 'price' && styles.selectedChipText]}>
-                  価格
-                </PaperText>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.sortChip, sortBy === 'revenue' && styles.selectedChip]}
-                onPress={() => setSortBy('revenue')}
-              >
-                <PaperText style={[styles.chipText, sortBy === 'revenue' && styles.selectedChipText]}>
-                  売上
-                </PaperText>
-              </TouchableOpacity>
-            </View>
+      {/* 商品リスト */}
+      <FlatList
+        data={list}
+        keyExtractor={i => i.id}
+        renderItem={renderItem}
+        contentContainerStyle={styles.listContent}
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <Text style={styles.emptyText}>
+              {searchQuery ? '該当する商品がありません' : '商品がまだ登録されていません'}
+            </Text>
           </View>
+        }
+      />
 
-          {searchExpanded && (
-            <View style={styles.searchBarContainer}>
-              <Searchbar
-                placeholder="商品を検索..."
-                onChangeText={setSearchQuery}
-                value={searchQuery}
-                style={styles.searchBar}
-                inputStyle={styles.searchInput}
-                iconColor="#667eea"
-                autoFocus
-                onBlur={() => {
-                  if (!searchQuery) {
-                    setSearchExpanded(false);
-                  }
-                }}
-              />
-            </View>
-          )}
-        </View>
+      {/* 登録ボタン */}
+      <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate('AddItem')} activeOpacity={0.85}>
+        <MaterialCommunityIcons name="plus" size={24} color="#fff" />
+      </TouchableOpacity>
 
-        <View style={styles.listContainer}>
-          {filteredItems.length === 0 ? (
-            searchQuery ? (
-              <View style={styles.emptyState}>
-                <View style={styles.emptyIconContainer}>
-                  <IconButton
-                    icon="magnify"
-                    size={64}
-                    iconColor="#e2e8f0"
-                    style={styles.emptyIcon}
-                  />
-                </View>
-                <PaperText style={styles.emptyTitle}>検索結果がありません</PaperText>
-                <PaperText style={styles.emptySubtitle}>
-                  別のキーワードで検索してみてください
-                </PaperText>
-              </View>
-            ) : (
-              <EmptyState />
-            )
-          ) : (
-            <FlatList
-              data={filteredItems}
-              keyExtractor={(item) => item.id}
-              renderItem={renderItem}
-              contentContainerStyle={styles.listContent}
-              showsVerticalScrollIndicator={false}
-            />
-          )}
-        </View>
-
-        <FAB
-          icon="plus"
-          style={styles.fab}
-          onPress={() => navigation.navigate('AddItem')}
-          color="#667eea"
+      {/* 数量変更モーダル */}
+      <HakModal visible={!!quickEdit} onClose={() => setQuickEdit(null)}>
+        <Text style={styles.modalSmLabel}>数量を変更</Text>
+        <Text style={styles.modalItemName}>{quickEdit?.name}</Text>
+        <TextInput
+          value={quickEditValue}
+          onChangeText={v => setQuickEditValue(v.replace(/[^0-9]/g, ''))}
+          keyboardType="numeric"
+          style={styles.modalNumInput}
+          autoFocus
+          selectTextOnFocus
         />
-
-        <Portal>
-          <Dialog 
-            visible={deleteDialogVisible} 
-            onDismiss={() => setDeleteDialogVisible(false)}
-            style={styles.dialog}
+        <View style={styles.modalActions}>
+          <TouchableOpacity style={styles.btnCancel} onPress={() => setQuickEdit(null)}>
+            <Text style={styles.btnCancelText}>キャンセル</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.btnAccent}
+            onPress={() => {
+              if (quickEdit) { setCount(quickEdit.id, parseInt(quickEditValue || '0', 10)); setQuickEdit(null); }
+            }}
           >
-            <Dialog.Title style={styles.dialogTitle}>削除の確認</Dialog.Title>
-            <Dialog.Content>
-              <PaperText style={styles.dialogContent}>
-                この商品を削除してもよろしいですか？
-              </PaperText>
-            </Dialog.Content>
-            <Dialog.Actions style={styles.dialogActions}>
-              <PaperButton 
-                onPress={() => setDeleteDialogVisible(false)}
-                textColor="#64748b"
-                labelStyle={styles.dialogButtonLabel}
-                style={styles.cancelDialogButton}
-              >
-                キャンセル
-              </PaperButton>
-              <PaperButton 
-                onPress={handleDeleteConfirmed} 
-                textColor="#ef4444"
-                style={styles.deleteConfirmButton}
-                labelStyle={styles.dialogButtonLabel}
-              >
-                削除
-              </PaperButton>
-            </Dialog.Actions>
-          </Dialog>
+            <Text style={styles.btnAccentText}>保存</Text>
+          </TouchableOpacity>
+        </View>
+      </HakModal>
 
-          <Dialog 
-            visible={resetDialogVisible} 
-            onDismiss={() => setResetDialogVisible(false)}
-            style={styles.dialog}
-          >
-            <Dialog.Title>
-              <View style={styles.resetDialogTitleContainer}>
-                <View style={styles.warningIconContainer}>
-                  <IconButton
-                    icon="alert"
-                    size={24}
-                    iconColor="#f59e0b"
-                    style={styles.warningIcon}
-                  />
-                </View>
-                <PaperText style={styles.resetDialogTitle}>売上リセットの確認</PaperText>
-              </View>
-            </Dialog.Title>
-            <Dialog.Content>
-              <PaperText style={styles.dialogContent}>
-                全商品の販売数をリセットしますか？
-              </PaperText>
-              <View style={styles.resetSummary}>
-                <View style={styles.summaryRow}>
-                  <PaperText style={styles.summaryLabel}>現在の総売上:</PaperText>
-                  <PaperText style={styles.summaryValue}>¥{getTotal().toLocaleString()}</PaperText>
-                </View>
-                <View style={styles.summaryRow}>
-                  <PaperText style={styles.summaryLabel}>総販売数:</PaperText>
-                  <PaperText style={styles.summaryValue}>{getTotalItemsSold()}個</PaperText>
-                </View>
-              </View>
-              <View style={styles.warningContainer}>
-                <PaperText style={styles.warningText}>
-                  ⚠️ この操作は取り消せません
-                </PaperText>
-              </View>
-            </Dialog.Content>
-            <Dialog.Actions style={styles.dialogActions}>
-              <PaperButton 
-                onPress={() => setResetDialogVisible(false)}
-                textColor="#64748b"
-                labelStyle={styles.dialogButtonLabel}
-                style={styles.cancelDialogButton}
-              >
-                キャンセル
-              </PaperButton>
-              <PaperButton 
-                onPress={resetAllCounts} 
-                textColor="#f59e0b"
-                style={styles.resetConfirmButton}
-                labelStyle={styles.dialogButtonLabel}
-                icon="refresh"
-              >
-                リセット実行
-              </PaperButton>
-            </Dialog.Actions>
-          </Dialog>
-
-          <Dialog 
-            visible={quickEditVisible} 
-            onDismiss={() => setQuickEditVisible(false)}
-            style={styles.dialog}
-          >
-            <Dialog.Title style={styles.dialogTitle}>数量を変更</Dialog.Title>
-            <Dialog.Content>
-              <PaperText style={styles.dialogSubtitle}>
-                {quickEditItem?.name}
-              </PaperText>
-              <TextInput
-                label="販売数"
-                mode="outlined"
-                value={quickEditValue}
-                onChangeText={setQuickEditValue}
-                keyboardType="numeric"
-                style={styles.quickEditInput}
-                theme={{
-                  colors: {
-                    primary: '#667eea',
-                    background: 'white',
-                  }
-                }}
-                autoFocus
-              />
-            </Dialog.Content>
-            <Dialog.Actions style={styles.dialogActions}>
-              <PaperButton 
-                onPress={() => setQuickEditVisible(false)}
-                textColor="#64748b"
-                labelStyle={styles.dialogButtonLabel}
-                style={styles.cancelDialogButton}
-              >
-                キャンセル
-              </PaperButton>
-              <PaperButton 
-                onPress={handleQuickEditSave} 
-                textColor="#667eea"
-                style={styles.saveButton}
-                labelStyle={styles.dialogButtonLabel}
-              >
-                保存
-              </PaperButton>
-            </Dialog.Actions>
-          </Dialog>
-        </Portal>
-      </LinearGradient>
-    </View>
+      {/* リセット確認モーダル */}
+      <HakModal visible={confirmReset} onClose={() => setConfirmReset(false)}>
+        <Text style={styles.modalTitle}>売上をリセット</Text>
+        <Text style={styles.modalBody}>
+          全商品の販売数を 0 に戻します。現在の総売上{' '}
+          <Text style={styles.modalBodyBold}>{yen(total)}</Text>
+          。この操作は取り消せません。
+        </Text>
+        <View style={styles.modalActions}>
+          <TouchableOpacity style={styles.btnCancel} onPress={() => setConfirmReset(false)}>
+            <Text style={styles.btnCancelText}>キャンセル</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.btnAccent} onPress={() => { resetCounts(); setConfirmReset(false); }}>
+            <Text style={styles.btnAccentText}>リセット</Text>
+          </TouchableOpacity>
+        </View>
+      </HakModal>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  gradient: {
-    flex: 1,
-  },
-  header: {
-    paddingHorizontal: 10,
-    paddingTop: 20,
-    paddingBottom: 20,
-  },
-  totalContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    borderRadius: 24,
-    padding: 16,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.8)',
-  },
-  totalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-    width: '100%',
-  },
-  leftSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  trendIconContainer: {
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    borderRadius: 12,
-    padding: 4,
-    marginRight: 8,
-  },
-  trendIcon: {
-    margin: 0,
-  },
-  totalLabel: {
-    fontSize: 16,
-    color: '#374151',
-    fontWeight: '600',
-    letterSpacing: 0.5,
-  },
-  resetButtonContainer: {
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    borderRadius: 12,
-    shadowColor: '#ef4444',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-  },
-  resetIcon: {
-    margin: 0,
-  },
+  safe: { flex: 1, backgroundColor: A.bg },
+
+  // ヘッダー
+  headerArea: { paddingHorizontal: 24, paddingTop: 20 },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  totalLabel: { fontSize: 13, color: A.muted, fontWeight: '600', letterSpacing: 1.4 },
   totalValue: {
-    fontSize: 40,
-    fontWeight: '900',
-    color: '#111827',
-    marginBottom: 8,
-    letterSpacing: -1,
-  },
-  totalBadge: {
-    backgroundColor: '#10b981',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    shadowColor: '#10b981',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  badgeText: {
-    color: 'white',
-    fontSize: 14,
+    fontSize: 52,
     fontWeight: '700',
-    letterSpacing: 0.5,
+    color: A.ink,
+    letterSpacing: -2.4,
+    lineHeight: 60,
+    marginTop: 8,
+    fontVariant: ['tabular-nums'] as any,
   },
-  searchContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    backdropFilter: 'blur(10px)',
+  yenSign: { fontSize: 30, fontWeight: '600', color: A.faint },
+  iconBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: A.line,
+    backgroundColor: A.surface,
+    alignItems: 'center', justifyContent: 'center', marginTop: 6,
   },
-  searchHeader: {
-    flexDirection: 'row',
+  statsRow: {
+    flexDirection: 'row', gap: 18, marginTop: 16, paddingBottom: 18,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: A.line,
+  },
+  stat: { fontSize: 13.5, color: A.muted },
+  statBold: { color: A.ink, fontWeight: '700' },
+
+  // 検索・ソート
+  searchBarRow: {
+    flexDirection: 'row', gap: 8,
+    paddingHorizontal: 24, paddingTop: 14, paddingBottom: 10,
     alignItems: 'center',
-    justifyContent: 'space-between',
   },
-  searchIconButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 12,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+  searchBox: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: A.bg,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: A.line,
+    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9,
   },
-  searchIconButtonActive: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-  },
-  searchIcon: {
-    margin: 0,
-  },
-  sortChipsCompact: {
-    flexDirection: 'row',
-    gap: 8,
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
+  searchInput: { flex: 1, fontSize: 14, color: A.ink, padding: 0 },
   sortChip: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-    borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: A.line,
+    backgroundColor: A.surface, borderRadius: 10,
+    paddingHorizontal: 10, paddingVertical: 8,
   },
-  selectedChip: {
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+  sortChipActive: { borderColor: A.accentLine, backgroundColor: A.accentSoft },
+  sortChipText: { fontSize: 12, color: A.muted, fontWeight: '500' },
+  sortChipTextActive: { color: A.accent, fontWeight: '700' },
+
+  // リスト行
+  listContent: { paddingHorizontal: 16, paddingTop: 2, paddingBottom: 100 },
+  row: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 8, paddingVertical: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: A.line,
   },
-  chipText: {
-    fontSize: 12,
-    color: '#ffffff',
-    fontWeight: '600',
+  rowInfo: { flex: 1, minWidth: 0 },
+  itemName: { fontSize: 15.5, fontWeight: '600', color: A.ink },
+  rowMeta: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', alignItems: 'baseline', marginTop: 4 },
+  itemPrice: { fontSize: 13, color: A.muted },
+  itemRevenue: { fontSize: 12.5 },
+  controls: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  ctrlBtn: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  ctrlMinus: {
+    borderWidth: StyleSheet.hairlineWidth, borderColor: A.line, backgroundColor: A.surface,
   },
-  selectedChipText: {
-    color: '#667eea',
-  },
-  searchBarContainer: {
-    marginTop: 12,
-  },
-  searchBar: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+  ctrlPlus: {
+    width: 38, height: 38, borderRadius: 11, backgroundColor: A.accent,
+    shadowColor: A.accent, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.28, shadowRadius: 9,
     elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    borderRadius: 12,
   },
-  searchInput: {
-    fontSize: 16,
+  ctrlCount: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  countText: {
+    fontSize: 18, fontWeight: '700', color: A.ink,
+    fontVariant: ['tabular-nums'] as any,
   },
-  listContainer: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-    paddingTop: 16,
-  },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 100,
-    paddingTop: 8,
-  },
-  itemCard: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    marginVertical: 6,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.05)',
-  },
-  itemContent: {
-    padding: 16,
-  },
-  itemHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  itemInfo: {
-    flex: 1,
-    marginRight: 12,
-  },
-  itemName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1f2937',
-    marginBottom: 4,
-  },
-  itemPrice: {
-    fontSize: 16,
-    color: '#6b7280',
-    fontWeight: '500',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  actionButton: {
-    borderRadius: 10,
-    padding: 2,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  editButton: {
-    backgroundColor: 'rgba(102, 126, 234, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(102, 126, 234, 0.3)',
-  },
-  deleteButton: {
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-  },
-  actionIcon: {
-    margin: 0,
-    width: 32,
-    height: 32,
-  },
-  statsAndControls: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  itemStatsCompact: {
-    flexDirection: 'row',
-    gap: 12,
-    flex: 1,
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statBadge: {
-    backgroundColor: 'rgba(102, 126, 234, 0.1)',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(102, 126, 234, 0.2)',
-  },
-  revenueBadge: {
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.2)',
-  },
-  statLabelCompact: {
-    fontSize: 11,
-    color: '#6b7280',
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  statValueCompact: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#667eea',
-  },
-  revenueValueCompact: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#10b981',
-  },
-  quantityControlsCompact: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  quantityButton: {
-    borderRadius: 12,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  decreaseButton: {
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.3)',
-  },
-  increaseButton: {
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
-  },
-  quantityIcon: {
-    margin: 0,
-    width: 36,
-    height: 36,
-  },
-  quantityDisplay: {
-    backgroundColor: 'rgba(102, 126, 234, 0.1)',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    minWidth: 48,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(102, 126, 234, 0.3)',
-    borderStyle: 'dashed',
-  },
-  quantityText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#667eea',
-  },
+
+  // 空状態
+  empty: { paddingTop: 64, paddingHorizontal: 24, alignItems: 'center' },
+  emptyText: { fontSize: 14, color: A.faint, textAlign: 'center' },
+
+  // FAB
   fab: {
-    position: 'absolute',
-    right: 24,
-    bottom: 24,
-    backgroundColor: 'white',
-    borderRadius: 16,
+    position: 'absolute', right: 24, bottom: 32,
+    width: 56, height: 56, borderRadius: 18,
+    backgroundColor: A.accent,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: A.accent, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 12,
     elevation: 8,
-    shadowColor: '#667eea',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    borderWidth: 2,
-    borderColor: 'rgba(102, 126, 234, 0.2)',
   },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
+
+  // モーダル共通
+  overlayBg: {
+    flex: 1, backgroundColor: 'rgba(34,28,24,0.32)',
+    alignItems: 'center', justifyContent: 'center', padding: 28,
   },
-  emptyIconContainer: {
-    backgroundColor: 'rgba(226, 232, 240, 0.1)',
-    borderRadius: 32,
-    padding: 16,
-    marginBottom: 16,
+  modalCard: { width: '100%', backgroundColor: A.surface, borderRadius: 24, padding: 24 },
+  modalSmLabel: { fontSize: 13, color: A.muted, fontWeight: '600' },
+  modalItemName: { fontSize: 17, fontWeight: '700', color: A.ink, marginTop: 4, marginBottom: 18 },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: A.ink },
+  modalBody: { fontSize: 14.5, color: A.muted, lineHeight: 23, marginTop: 10, marginBottom: 4 },
+  modalBodyBold: { color: A.ink, fontWeight: '700' },
+  modalNumInput: {
+    width: '100%', borderWidth: 1, borderColor: A.line, borderRadius: 14,
+    padding: 14, fontSize: 24, fontWeight: '700', color: A.ink, textAlign: 'center',
+    fontVariant: ['tabular-nums'] as any,
   },
-  emptyIcon: {
-    margin: 0,
+  modalActions: { flexDirection: 'row', gap: 10, marginTop: 18 },
+  btnCancel: {
+    flex: 1, padding: 13, borderRadius: 13,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: A.line,
+    backgroundColor: A.surface, alignItems: 'center',
   },
-  emptyTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#64748b',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  emptySubtitle: {
-    fontSize: 16,
-    color: '#94a3b8',
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-  dialog: {
-    borderRadius: 20,
-    backgroundColor: 'white',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-  },
-  dialogTitle: {
-    color: '#1f2937',
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  dialogContent: {
-    color: '#6b7280',
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  dialogSubtitle: {
-    fontSize: 16,
-    color: '#6b7280',
-    textAlign: 'center',
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  dialogActions: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    gap: 12,
-  },
-  cancelDialogButton: {
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
-    paddingVertical: 4,
-  },
-  deleteConfirmButton: {
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    borderRadius: 12,
-    paddingVertical: 4,
-    elevation: 2,
-    shadowColor: '#ef4444',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
-  },
-  saveButton: {
-    backgroundColor: 'rgba(102, 126, 234, 0.1)',
-    borderRadius: 12,
-    paddingVertical: 4,
-    elevation: 2,
-    shadowColor: '#667eea',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(102, 126, 234, 0.3)',
-  },
-  dialogButtonLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  resetDialogTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  resetDialogTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1f2937',
-    marginLeft: 8,
-  },
-  warningIconContainer: {
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-    borderRadius: 12,
-    padding: 4,
-  },
-  warningIcon: {
-    margin: 0,
-  },
-  resetSummary: {
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-    borderRadius: 16,
-    padding: 20,
-    marginTop: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.2)',
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  summaryLabel: {
-    fontSize: 14,
-    color: '#6b7280',
-    fontWeight: '600',
-  },
-  summaryValue: {
-    fontSize: 16,
-    color: '#1f2937',
-    fontWeight: '700',
-  },
-  warningContainer: {
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.2)',
-  },
-  warningText: {
-    fontSize: 14,
-    color: '#dc2626',
-    textAlign: 'center',
-    fontWeight: '600',
-  },
-  resetConfirmButton: {
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-    borderRadius: 12,
-    paddingVertical: 4,
-    elevation: 2,
-    shadowColor: '#f59e0b',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.3)',
-  },
-  quickEditInput: {
-    backgroundColor: 'white',
-    marginTop: 16,
-    borderRadius: 12,
-  },
+  btnCancelText: { fontSize: 15, color: A.muted, fontWeight: '600' },
+  btnAccent: { flex: 1, padding: 13, borderRadius: 13, backgroundColor: A.accent, alignItems: 'center' },
+  btnAccentText: { fontSize: 15, color: '#fff', fontWeight: '700' },
 });
 
 export default ItemListScreen;

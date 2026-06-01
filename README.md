@@ -2,6 +2,8 @@
 
 同人即売会（コミケ等）の頒布物の売上をその場で記録するためのモバイルアプリです。商品ごとの頒布数をワンタップでカウントし、合計売上・合計頒布数をリアルタイムに集計します。
 
+白基調・余白を活かしたミニマルなUI（コードネーム「白磁」）に、`#667EEA` のブルーパープルをアクセントとして採用しています。
+
 - **アプリ名**: ウリメモ
 - **slug**: `urimemo`
 - **bundle identifier (iOS)**: `com.kana.urimemo`
@@ -15,8 +17,8 @@
 | --- | --- |
 | フレームワーク | [Expo](https://expo.dev/) ~53 / React Native 0.79 |
 | 言語 | TypeScript（画面）/ JavaScript（エントリ） |
-| UI | [React Native Paper](https://callstack.github.io/react-native-paper/) 5, expo-linear-gradient |
-| 画面遷移 | React Navigation 7（native-stack） |
+| UI | React Native 標準コンポーネント + `StyleSheet` による独自デザイン、アイコンは [`@expo/vector-icons`](https://icons.expo.fyi/)（MaterialCommunityIcons） |
+| 画面遷移 | React Navigation 7（native-stack）+ 画面内の独自下タブ（レジ / 集計） |
 | 永続化 | `@react-native-async-storage/async-storage` |
 | ビルド/配信 | EAS Build / EAS Submit |
 | ランタイム | React 19、New Architecture 有効（`newArchEnabled: true`） |
@@ -65,9 +67,10 @@ urimemo/
 ├── assets/                  # アイコン・スプラッシュ画像
 ├── screens/
 │   ├── LoadingScreen.tsx    # 起動時スプラッシュ
-│   ├── ItemListScreen.tsx   # 商品一覧。カウント増減・検索・並び替え・合計集計・リセット
-│   ├── AddItemScreen.tsx    # 商品追加（名前・価格）
-│   └── ItemDetailScreen.tsx # 商品詳細・編集・削除
+│   ├── MainScreen.tsx       # メイン画面。下タブで「レジ」「集計」を切替（初期画面）
+│   ├── AddItemScreen.tsx    # 商品登録（名前・価格）
+│   ├── ItemDetailScreen.tsx # 商品詳細・編集・削除（現在の実績表示）
+│   └── ItemListScreen.tsx   # 旧・商品一覧画面（MainScreen に統合済みの未使用ファイル）
 └── docs/
     ├── privacy_policy/      # プライバシーポリシー（GitHub Pages 等で公開）
     └── app_support/         # サポートページ
@@ -77,20 +80,31 @@ urimemo/
 
 ## 画面と機能
 
-### ItemList（商品一覧）— 初期画面
-- 商品ごとのカード表示と、頒布数の `＋ / −` ワンタップ増減
-- 名前での検索（Searchbar）
-- 並び替え: 名前 / 価格 / 売上（`price × count`）
-- 合計売上・合計頒布数の集計表示
-- 数量のクイック編集（ダイアログ）
-- 全商品のカウントを 0 に戻す「リセット」機能
-- FAB から商品追加画面へ遷移
+### Main（メイン）— 初期画面
+画面下部の独自タブバーで「レジ」「集計」を切替え、中央のフローティングボタンから商品登録へ遷移します。
 
-### AddItem（商品追加）
-- 商品名・価格を入力して登録（バリデーションあり）
+**レジタブ**
+- 本日の売上を主役として大きく表示（合計売上・頒布点数・商品種数）
+- 商品行の `＋ / −` ワンタップ増減
+- 商品名の横にペンアイコンを表示し、タップで詳細・編集画面へ遷移
+- 名前での検索
+- 並び替え: 名前 / 価格 / 売上（`price × count`）
+- 数量のクイック編集（モーダル）
+- 全商品のカウントを 0 に戻す「リセット」機能（確認モーダルあり）
+
+**集計タブ**
+- 総売上・販売点数のサマリーカード
+- 最も売れている商品のハイライト
+- 商品別売上のランキングとバー表示
+
+### AddItem（商品登録）
+- 商品名・価格を入力して登録（価格プリセット・入力プレビューあり）
+- 中央のフローティング「登録」ボタンから遷移
 
 ### ItemDetail（商品詳細）
-- 商品名・価格の編集、売上プレビュー、削除
+- 現在の実績（頒布数・売上）の表示
+- 商品名・価格の編集、変更後プレビュー
+- 商品の個別削除（確認モーダルあり）
 
 ---
 
