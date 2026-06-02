@@ -1,6 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, ActivityIndicator, Text, Animated, Easing } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { View, StyleSheet, ActivityIndicator, Text, Animated, Easing, Image } from 'react-native';
 
 const A = {
   bg: '#F4F6FB',
@@ -29,10 +28,10 @@ const LoadingScreen = () => {
       <Animated.View style={{ alignItems: 'center', opacity: fade, transform: [{ translateY: rise }] }}>
         {/* ロゴバッジ */}
         <View style={styles.logo}>
-          <MaterialCommunityIcons name="receipt-text-outline" size={42} color="#fff" />
+          <Image source={require('../assets/splash-icon.png')} style={styles.logoImage} />
         </View>
         <Text style={styles.title}>ウリメモ</Text>
-        <Text style={styles.tagline}>同人物販の売上を、さっと記録</Text>
+        <Text style={styles.tagline}>同人即売会の売上を、さっと記録</Text>
       </Animated.View>
 
       <View style={styles.footer}>
@@ -57,6 +56,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 22,
+  },
+  logoImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 26,
   },
   title: {
     fontSize: 30,
