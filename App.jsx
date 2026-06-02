@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
@@ -27,12 +28,14 @@ export default function App() {
   }
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator initialRouteName="ItemList" screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="ItemList" component={MainScreen} />
-        <Stack.Screen name="AddItem" component={AddItemScreen} />
-        <Stack.Screen name="ItemDetail" component={ItemDetailScreen} />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <NavigationContainer>
+        <Stack.Navigator initialRouteName="ItemList" screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="ItemList" component={MainScreen} />
+          <Stack.Screen name="AddItem" component={AddItemScreen} />
+          <Stack.Screen name="ItemDetail" component={ItemDetailScreen} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </GestureHandlerRootView>
   );
 }

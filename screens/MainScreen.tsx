@@ -18,6 +18,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import IMETextInput from '../components/IMETextInput';
 import { useIMEField } from '../hooks/useIMEField';
 import { useFocusRing } from '../hooks/useFocusRing';
+import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
 
 const A = {
   bg: '#F4F6FB',
@@ -105,36 +106,42 @@ function BottomTabBar({ active, onTab }: {
 }
 
 // ─── レジタブ ──────────────────────────────────────────────────────────────────
-function RegisterTab({ items, inc, dec, setCount, resetCounts, openEdit, onAdd }: {
+function RegisterTab({ items, inc, dec, setCount, openEdit, onAdd, onReorder }: {
   items: Item[];
   inc: (id: string) => void;
   dec: (id: string) => void;
   setCount: (id: string, n: number) => void;
-  resetCounts: () => void;
   openEdit: (item: Item) => void;
   onAdd: () => void;
+  onReorder: (items: Item[]) => void;
 }) {
   const searchField = useIMEField('');
   const searchQuery = searchField.value;
   const searchFocus = useFocusRing();
   const quickFocus = useFocusRing();
-  const [sortBy, setSortBy] = useState<'name' | 'price'>('name');
   const [quickEdit, setQuickEdit] = useState<Item | null>(null);
   const [quickEditValue, setQuickEditValue] = useState('');
-  const [confirmReset, setConfirmReset] = useState(false);
 
   const total = items.reduce((s, i) => s + i.price * (i.count || 0), 0);
   const units = items.reduce((s, i) => s + (i.count || 0), 0);
 
-  let list = items.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()));
-  list = [...list].sort((a, b) =>
-    sortBy === 'name' ? a.name.localeCompare(b.name, 'ja') : b.price - a.price
-  );
+  const list = searchQuery
+    ? items.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    : items;
 
-  const renderItem = ({ item }: { item: Item }) => (
-    <View style={s.row}>
-      <TouchableOpacity style={s.rowInfo} onPress={() => openEdit(item)} activeOpacity={0.6}>
+  // drag を渡すと長押しで並び替え可能になる（検索中は drag なし）
+  const renderRow = (item: Item, drag?: () => void, isActive?: boolean) => (
+    <View style={[s.row, isActive && s.rowActive]}>
+      <TouchableOpacity
+        style={s.rowInfo}
+        onPress={() => openEdit(item)}
+        onLongPress={drag}
+        delayLongPress={180}
+        disabled={isActive}
+        activeOpacity={0.6}
+      >
         <View style={s.nameRow}>
+          {drag && <MaterialCommunityIcons name="drag-horizontal-variant" size={16} color={A.faint} style={s.dragHandle} />}
           <Text style={s.itemName} numberOfLines={1}>{item.name}</Text>
           <MaterialCommunityIcons name="pencil" size={13} color={A.faint} style={s.editHint} />
         </View>
@@ -168,6 +175,20 @@ function RegisterTab({ items, inc, dec, setCount, resetCounts, openEdit, onAdd }
     </View>
   );
 
+  const emptyComponent = (
+    <View style={s.empty}>
+      <Text style={s.emptyText}>
+        {searchQuery ? '該当する商品がありません' : '商品がまだ登録されていません'}
+      </Text>
+      {!searchQuery && (
+        <TouchableOpacity style={s.emptyCta} onPress={onAdd} activeOpacity={0.85}>
+          <MaterialCommunityIcons name="plus" size={18} color="#fff" />
+          <Text style={s.emptyCtaText}>商品を登録</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+
   return (
     <View style={{ flex: 1 }}>
       {/* 売上ヘッダー */}
@@ -182,14 +203,9 @@ function RegisterTab({ items, inc, dec, setCount, resetCounts, openEdit, onAdd }
               <Text style={s.totalValue}>{num(total)}</Text>
             </View>
           </View>
-          <View style={s.headerBtns}>
-            <TouchableOpacity style={s.addHeaderBtn} onPress={onAdd} activeOpacity={0.85}>
-              <MaterialCommunityIcons name="plus" size={22} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity style={s.iconBtn} onPress={() => setConfirmReset(true)} activeOpacity={0.7}>
-              <MaterialCommunityIcons name="refresh" size={18} color={A.muted} />
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity style={[s.addHeaderBtn, { marginTop: 6 }]} onPress={onAdd} activeOpacity={0.85}>
+            <MaterialCommunityIcons name="plus" size={22} color="#fff" />
+          </TouchableOpacity>
         </View>
         <View style={s.statsRow}>
           <Text style={s.stat}>販売 <Text style={s.statBold}>{units}</Text> 点</Text>
@@ -197,7 +213,7 @@ function RegisterTab({ items, inc, dec, setCount, resetCounts, openEdit, onAdd }
         </View>
       </View>
 
-      {/* 検索・並び替え */}
+      {/* 検索 */}
       <View style={s.toolArea}>
         <View style={[s.searchBox, searchFocus.focused && s.fieldFocused]}>
           <MaterialCommunityIcons name="magnify" size={19} color={searchFocus.focused ? A.accent : A.muted} />
@@ -214,45 +230,35 @@ function RegisterTab({ items, inc, dec, setCount, resetCounts, openEdit, onAdd }
             style={s.searchInput}
           />
         </View>
-        <View style={s.sortRow}>
-          <Text style={s.sortLabel}>並び替え</Text>
-          <View style={s.sortSegment}>
-            {(['name', 'price'] as const).map(sv => (
-              <TouchableOpacity
-                key={sv}
-                style={[s.sortSeg, sortBy === sv && s.sortSegActive]}
-                onPress={() => setSortBy(sv)}
-                activeOpacity={0.7}
-              >
-                <Text style={[s.sortSegText, sortBy === sv && s.sortSegTextActive]}>
-                  {sv === 'name' ? '名前' : '価格'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
       </View>
 
-      {/* 商品リスト */}
-      <FlatList
-        data={list}
-        keyExtractor={i => i.id}
-        renderItem={renderItem}
-        contentContainerStyle={s.listContent}
-        ListEmptyComponent={
-          <View style={s.empty}>
-            <Text style={s.emptyText}>
-              {searchQuery ? '該当する商品がありません' : '商品がまだ登録されていません'}
-            </Text>
-            {!searchQuery && (
-              <TouchableOpacity style={s.emptyCta} onPress={onAdd} activeOpacity={0.85}>
-                <MaterialCommunityIcons name="plus" size={18} color="#fff" />
-                <Text style={s.emptyCtaText}>商品を登録</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        }
-      />
+      {/* 商品リスト：通常は長押しドラッグで並び替え、検索中は固定 */}
+      {searchQuery ? (
+        <FlatList
+          style={s.list}
+          data={list}
+          keyExtractor={i => i.id}
+          renderItem={({ item }) => renderRow(item)}
+          contentContainerStyle={s.listContent}
+          keyboardShouldPersistTaps="handled"
+          ListEmptyComponent={emptyComponent}
+        />
+      ) : (
+        <DraggableFlatList
+          style={s.list}
+          containerStyle={s.list}
+          data={items}
+          keyExtractor={i => i.id}
+          onDragEnd={({ data }) => onReorder(data)}
+          renderItem={({ item, drag, isActive }) => (
+            <ScaleDecorator activeScale={1.03}>
+              {renderRow(item, drag, isActive)}
+            </ScaleDecorator>
+          )}
+          contentContainerStyle={s.listContent}
+          ListEmptyComponent={emptyComponent}
+        />
+      )}
 
       {/* 数量変更モーダル */}
       <HakModal visible={!!quickEdit} onClose={() => setQuickEdit(null)}>
@@ -282,30 +288,14 @@ function RegisterTab({ items, inc, dec, setCount, resetCounts, openEdit, onAdd }
           </TouchableOpacity>
         </View>
       </HakModal>
-
-      {/* リセット確認モーダル */}
-      <HakModal visible={confirmReset} onClose={() => setConfirmReset(false)}>
-        <Text style={s.modalTitle}>売上をリセット</Text>
-        <Text style={s.modalBody}>
-          全商品の販売数を 0 に戻します。現在の総売上は{' '}
-          <Text style={s.modalBodyBold}>{yen(total)}</Text> です。この操作は取り消せません。
-        </Text>
-        <View style={s.modalActions}>
-          <TouchableOpacity style={s.btnCancel} onPress={() => setConfirmReset(false)}>
-            <Text style={s.btnCancelText}>キャンセル</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={s.btnAccent} onPress={() => { resetCounts(); setConfirmReset(false); }}>
-            <Text style={s.btnAccentText}>リセット</Text>
-          </TouchableOpacity>
-        </View>
-      </HakModal>
     </View>
   );
 }
 
 // ─── 集計タブ ──────────────────────────────────────────────────────────────────
-function SummaryTab({ items }: { items: Item[] }) {
+function SummaryTab({ items, resetCounts }: { items: Item[]; resetCounts: () => void }) {
   const [sortBy, setSortBy] = useState<'revenue' | 'count'>('revenue');
+  const [confirmReset, setConfirmReset] = useState(false);
   const withRev = items.map(i => ({ ...i, rev: i.price * (i.count || 0) }));
   const ranked = [...withRev].sort((a, b) =>
     sortBy === 'revenue' ? b.rev - a.rev : (b.count || 0) - (a.count || 0)
@@ -318,7 +308,13 @@ function SummaryTab({ items }: { items: Item[] }) {
 
   return (
     <ScrollView contentContainerStyle={s.summaryScroll} showsVerticalScrollIndicator={false}>
-      <Text style={s.pageTitle}>集計</Text>
+      <View style={s.summaryHeader}>
+        <Text style={[s.pageTitle, { marginBottom: 0 }]}>集計</Text>
+        <TouchableOpacity style={s.resetBtn} onPress={() => setConfirmReset(true)} activeOpacity={0.8}>
+          <MaterialCommunityIcons name="refresh" size={16} color={A.accent} />
+          <Text style={s.resetBtnText}>リセット</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* 統計カード */}
       <View style={s.statsCards}>
@@ -384,6 +380,22 @@ function SummaryTab({ items }: { items: Item[] }) {
           </View>
         );
       })}
+
+      <HakModal visible={confirmReset} onClose={() => setConfirmReset(false)}>
+        <Text style={s.modalTitle}>売上をリセット</Text>
+        <Text style={s.modalBody}>
+          全商品の販売数を 0 に戻します。現在の総売上は{' '}
+          <Text style={s.modalBodyBold}>{yen(total)}</Text> です。この操作は取り消せません。
+        </Text>
+        <View style={s.modalActions}>
+          <TouchableOpacity style={s.btnCancel} onPress={() => setConfirmReset(false)}>
+            <Text style={s.btnCancelText}>キャンセル</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.btnAccent} onPress={() => { resetCounts(); setConfirmReset(false); }}>
+            <Text style={s.btnAccentText}>リセット</Text>
+          </TouchableOpacity>
+        </View>
+      </HakModal>
     </ScrollView>
   );
 }
@@ -552,11 +564,12 @@ const MainScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           <RegisterTab
             items={items}
             inc={inc} dec={dec} setCount={setCount}
-            resetCounts={resetCounts} openEdit={openEdit}
+            openEdit={openEdit}
             onAdd={() => navigation.navigate('AddItem')}
+            onReorder={saveItems}
           />
         )}
-        {tab === 'summary' && <SummaryTab items={items} />}
+        {tab === 'summary' && <SummaryTab items={items} resetCounts={resetCounts} />}
         {tab === 'memo' && (
           <MemoTab
             memos={memos}
@@ -609,15 +622,9 @@ const s = StyleSheet.create({
   },
   yenSign: { paddingRight: 5 },
   yenSignText: { fontSize: 33, fontWeight: '600', color: A.faint },
-  headerBtns: { flexDirection: 'row', gap: 8, marginTop: 6 },
   addHeaderBtn: {
     width: 40, height: 40, borderRadius: 12,
     backgroundColor: A.accent, alignItems: 'center', justifyContent: 'center',
-  },
-  iconBtn: {
-    width: 40, height: 40, borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: A.line,
-    backgroundColor: A.surface, alignItems: 'center', justifyContent: 'center',
   },
   statsRow: {
     flexDirection: 'row', gap: 18, marginTop: 16, paddingBottom: 18,
@@ -650,19 +657,25 @@ const s = StyleSheet.create({
   sortSegTextActive: { color: A.accent, fontWeight: '700' },
 
   // ── リスト行
-  listContent: { paddingHorizontal: 16, paddingTop: 2, paddingBottom: 16 },
+  list: { flex: 1 },
+  listContent: { paddingHorizontal: 16, paddingTop: 2, paddingBottom: 28 },
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingHorizontal: 8, paddingVertical: 16,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: A.line,
+    backgroundColor: A.bg,
+  },
+  rowActive: {
+    backgroundColor: A.surface, borderRadius: 14, borderBottomColor: 'transparent',
   },
   rowInfo: { flex: 1, minWidth: 0 },
   nameRow: { flexDirection: 'row', alignItems: 'center' },
-  itemName: { fontSize: 17.5, fontWeight: '600', color: A.ink, flexShrink: 1 },
+  dragHandle: { marginRight: 6 },
+  itemName: { fontSize: 19.5, fontWeight: '600', color: A.ink, flexShrink: 1 },
   editHint: { marginLeft: 6 },
-  rowMeta: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', alignItems: 'baseline', marginTop: 4 },
-  itemPrice: { fontSize: 15, color: A.muted },
-  itemRevenue: { fontSize: 14.5 },
+  rowMeta: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', alignItems: 'baseline', marginTop: 5 },
+  itemPrice: { fontSize: 16, color: A.muted },
+  itemRevenue: { fontSize: 15.5 },
   controls: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   ctrlBtn: { width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   ctrlMinus: { borderWidth: StyleSheet.hairlineWidth, borderColor: A.line, backgroundColor: A.surface },
@@ -706,6 +719,16 @@ const s = StyleSheet.create({
   barTrack: { flex: 1, height: 7, borderRadius: 3.5, backgroundColor: A.bg, overflow: 'hidden' },
   barFill: { height: '100%', borderRadius: 3.5, backgroundColor: A.accent },
   rankCount: { fontSize: 13.5, color: A.muted, fontVariant: ['tabular-nums'] as any, minWidth: 42, textAlign: 'right' },
+  summaryHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18,
+  },
+  resetBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingVertical: 9, borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: A.accentLine,
+    backgroundColor: A.accentSoft,
+  },
+  resetBtnText: { fontSize: 14, fontWeight: '700', color: A.accent },
 
   // ── メモ
   memoHeader: {
