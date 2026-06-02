@@ -16,6 +16,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import IMETextInput from '../components/IMETextInput';
 import { useIMEField } from '../hooks/useIMEField';
+import { useFocusRing } from '../hooks/useFocusRing';
 
 const A = {
   bg: '#F4F6FB',
@@ -54,6 +55,8 @@ const ItemDetailScreen = () => {
   const { item, index } = route.params;
 
   const nameField = useIMEField(item.name);
+  const nameFocus = useFocusRing();
+  const priceFocus = useFocusRing();
   const [price, setPrice] = useState(String(item.price));
   const [loading, setLoading] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
@@ -136,19 +139,23 @@ const ItemDetailScreen = () => {
             defaultValue={nameField.initial}
             onChangeText={nameField.onChangeText}
             onEndEditing={nameField.commit}
+            onFocus={nameFocus.onFocus}
+            onBlur={nameFocus.onBlur}
             placeholder="商品名を入力"
             placeholderTextColor={A.faint}
             maxLength={50}
-            style={styles.textInput}
+            style={[styles.textInput, nameFocus.focused && styles.inputFocused]}
           />
 
           {/* 価格 */}
           <Text style={[styles.label, { marginTop: 24 }]}>価格</Text>
-          <View style={styles.priceRow}>
+          <View style={[styles.priceRow, priceFocus.focused && styles.inputFocused]}>
             <Text style={styles.yenPrefix}>¥</Text>
             <TextInput
-              value={price}
+              value={price ? Number(price).toLocaleString('ja-JP') : ''}
               onChangeText={v => setPrice(v.replace(/[^0-9]/g, ''))}
+              onFocus={priceFocus.onFocus}
+              onBlur={priceFocus.onBlur}
               keyboardType="numeric"
               placeholder="0"
               placeholderTextColor={A.faint}
@@ -162,7 +169,7 @@ const ItemDetailScreen = () => {
               <TouchableOpacity
                 key={p}
                 style={[styles.preset, price === String(p) && styles.presetActive]}
-                onPress={() => setPrice(String(p))}
+                onPress={() => { setPrice(String(p)); nameField.commit(); }}
                 activeOpacity={0.7}
               >
                 <Text style={[styles.presetText, price === String(p) && styles.presetTextActive]}>
@@ -248,13 +255,14 @@ const styles = StyleSheet.create({
 
   label: { fontSize: 14.5, fontWeight: '700', color: A.muted, letterSpacing: 0.4, marginBottom: 9 },
   textInput: {
-    borderWidth: 1, borderColor: A.line, borderRadius: 14,
+    borderWidth: 1.5, borderColor: A.line, borderRadius: 14,
     paddingHorizontal: 16, paddingVertical: 15,
     fontSize: 18, color: A.ink, backgroundColor: A.surface,
   },
+  inputFocused: { borderColor: A.accent, backgroundColor: A.accentSoft },
   priceRow: {
     flexDirection: 'row', alignItems: 'center',
-    borderWidth: 1, borderColor: A.line, borderRadius: 14,
+    borderWidth: 1.5, borderColor: A.line, borderRadius: 14,
     paddingHorizontal: 16, backgroundColor: A.surface,
   },
   yenPrefix: { fontSize: 24, color: A.faint, fontWeight: '600' },

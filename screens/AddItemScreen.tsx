@@ -15,6 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import IMETextInput from '../components/IMETextInput';
 import { useIMEField } from '../hooks/useIMEField';
+import { useFocusRing } from '../hooks/useFocusRing';
 
 const A = {
   bg: '#F4F6FB',
@@ -35,6 +36,8 @@ const STORAGE_KEY = 'items';
 const AddItemScreen = () => {
   const navigation = useNavigation();
   const nameField = useIMEField('');
+  const nameFocus = useFocusRing();
+  const priceFocus = useFocusRing();
   const [price, setPrice] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -87,20 +90,24 @@ const AddItemScreen = () => {
             defaultValue={nameField.initial}
             onChangeText={nameField.onChangeText}
             onEndEditing={nameField.commit}
+            onFocus={nameFocus.onFocus}
+            onBlur={nameFocus.onBlur}
             placeholder="例：新刊"
             placeholderTextColor={A.faint}
             maxLength={50}
-            style={styles.textInput}
+            style={[styles.textInput, nameFocus.focused && styles.inputFocused]}
             autoFocus
           />
 
           {/* 価格 */}
           <Text style={[styles.label, { marginTop: 24 }]}>価格</Text>
-          <View style={styles.priceRow}>
+          <View style={[styles.priceRow, priceFocus.focused && styles.inputFocused]}>
             <Text style={styles.yenPrefix}>¥</Text>
             <TextInput
-              value={price}
+              value={price ? Number(price).toLocaleString('ja-JP') : ''}
               onChangeText={v => setPrice(v.replace(/[^0-9]/g, ''))}
+              onFocus={priceFocus.onFocus}
+              onBlur={priceFocus.onBlur}
               keyboardType="numeric"
               placeholder="0"
               placeholderTextColor={A.faint}
@@ -114,7 +121,7 @@ const AddItemScreen = () => {
               <TouchableOpacity
                 key={p}
                 style={[styles.preset, price === String(p) && styles.presetActive]}
-                onPress={() => setPrice(String(p))}
+                onPress={() => { setPrice(String(p)); nameField.commit(); }}
                 activeOpacity={0.7}
               >
                 <Text style={[styles.presetText, price === String(p) && styles.presetTextActive]}>
@@ -127,9 +134,15 @@ const AddItemScreen = () => {
           {/* プレビュー */}
           {valid && (
             <View style={styles.preview}>
-              <Text style={styles.previewLabel}>プレビュー</Text>
-              <View style={styles.previewRow}>
-                <Text style={styles.previewName} numberOfLines={1}>{nameField.value.trim()}</Text>
+              <View style={styles.previewHead}>
+                <MaterialCommunityIcons name="eye-outline" size={15} color={A.accent} />
+                <Text style={styles.previewLabel}>登録プレビュー</Text>
+              </View>
+              <View style={styles.previewCard}>
+                <View style={styles.previewInfo}>
+                  <Text style={styles.previewName} numberOfLines={1}>{nameField.value.trim()}</Text>
+                  <Text style={styles.previewMeta}>レジに追加される商品</Text>
+                </View>
                 <Text style={styles.previewPrice}>{yen(parseInt(price, 10))}</Text>
               </View>
             </View>
@@ -168,13 +181,14 @@ const styles = StyleSheet.create({
 
   label: { fontSize: 14.5, fontWeight: '700', color: A.muted, letterSpacing: 0.4, marginBottom: 9 },
   textInput: {
-    borderWidth: 1, borderColor: A.line, borderRadius: 14,
+    borderWidth: 1.5, borderColor: A.line, borderRadius: 14,
     paddingHorizontal: 16, paddingVertical: 15,
     fontSize: 18, color: A.ink, backgroundColor: A.surface,
   },
+  inputFocused: { borderColor: A.accent, backgroundColor: A.accentSoft },
   priceRow: {
     flexDirection: 'row', alignItems: 'center',
-    borderWidth: 1, borderColor: A.line, borderRadius: 14,
+    borderWidth: 1.5, borderColor: A.line, borderRadius: 14,
     paddingHorizontal: 16, backgroundColor: A.surface,
   },
   yenPrefix: { fontSize: 24, color: A.faint, fontWeight: '600' },
@@ -194,15 +208,24 @@ const styles = StyleSheet.create({
   presetTextActive: { color: A.accent },
 
   preview: {
-    marginTop: 26, padding: 18,
-    borderWidth: 1, borderColor: A.accentLine,
-    borderStyle: 'dashed', borderRadius: 16, backgroundColor: A.accentSoft,
+    marginTop: 28, padding: 14,
+    borderRadius: 18, backgroundColor: A.accentSoft,
   },
-  previewLabel: { fontSize: 13, color: A.accent, fontWeight: '700', letterSpacing: 0.6, marginBottom: 8 },
-  previewRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  previewName: { fontSize: 17, fontWeight: '600', color: A.ink, flex: 1, marginRight: 8 },
+  previewHead: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginBottom: 10, paddingHorizontal: 4,
+  },
+  previewLabel: { fontSize: 12.5, color: A.accent, fontWeight: '700', letterSpacing: 0.6 },
+  previewCard: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: A.surface, borderRadius: 12,
+    paddingHorizontal: 16, paddingVertical: 15,
+  },
+  previewInfo: { flex: 1, marginRight: 10 },
+  previewName: { fontSize: 16.5, fontWeight: '600', color: A.ink },
+  previewMeta: { fontSize: 12.5, color: A.faint, marginTop: 3 },
   previewPrice: {
-    fontSize: 19, fontWeight: '700', color: A.ink,
+    fontSize: 19, fontWeight: '700', color: A.accent,
     fontVariant: ['tabular-nums'] as any,
   },
 

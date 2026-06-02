@@ -17,11 +17,13 @@ import { useIsFocused } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import IMETextInput from '../components/IMETextInput';
 import { useIMEField } from '../hooks/useIMEField';
+import { useFocusRing } from '../hooks/useFocusRing';
 
 const A = {
   bg: '#F4F6FB',
   surface: '#FFFFFF',
   line: '#E3E8F1',
+  field: '#EAEEF6',
   ink: '#1B2333',
   muted: '#79839A',
   faint: '#A9B1C2',
@@ -69,62 +71,54 @@ function HakModal({ visible, onClose, children }: {
 }
 
 // ─── 下タブバー ────────────────────────────────────────────────────────────────
-function BottomTabBar({ active, onTab, onAdd }: {
-  active: Tab; onTab: (t: Tab) => void; onAdd: () => void;
+type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+
+function BottomTabBar({ active, onTab }: {
+  active: Tab; onTab: (t: Tab) => void;
 }) {
   const insets = useSafeAreaInsets();
+
+  // 現在地のタブ＝淡いアクセント円＋アクセントのアイコン/ラベル、非アクティブ＝アウトライン＋ミュート
+  const renderTab = (id: Tab, label: string, iconOn: IconName, iconOff: IconName) => {
+    const isActive = active === id;
+    return (
+      <TouchableOpacity style={s.tabItem} onPress={() => onTab(id)} activeOpacity={0.7}>
+        <View style={[s.tabIcon, isActive && s.tabIconActive]}>
+          <MaterialCommunityIcons
+            name={isActive ? iconOn : iconOff}
+            size={22}
+            color={isActive ? A.accent : A.faint}
+          />
+        </View>
+        <Text style={[s.tabLabel, isActive && s.tabLabelActive]}>{label}</Text>
+      </TouchableOpacity>
+    );
+  };
+
   return (
     <View style={[s.tabBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
-      <TouchableOpacity style={s.tabItem} onPress={() => onTab('register')} activeOpacity={0.7}>
-        <MaterialCommunityIcons
-          name="receipt"
-          size={23}
-          color={active === 'register' ? A.accent : A.faint}
-        />
-        <Text style={[s.tabLabel, active === 'register' && s.tabLabelActive]}>レジ</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={s.tabItem} onPress={() => onTab('summary')} activeOpacity={0.7}>
-        <MaterialCommunityIcons
-          name="chart-bar"
-          size={23}
-          color={active === 'summary' ? A.accent : A.faint}
-        />
-        <Text style={[s.tabLabel, active === 'summary' && s.tabLabelActive]}>集計</Text>
-      </TouchableOpacity>
-
-      {/* フローティング登録ボタン */}
-      <View style={s.tabCenter}>
-        <TouchableOpacity style={s.centerBtn} onPress={onAdd} activeOpacity={0.85}>
-          <MaterialCommunityIcons name="plus" size={26} color="#fff" />
-        </TouchableOpacity>
-        <Text style={s.centerLabel}>登録</Text>
-      </View>
-
-      <TouchableOpacity style={s.tabItem} onPress={() => onTab('memo')} activeOpacity={0.7}>
-        <MaterialCommunityIcons
-          name="hand-heart-outline"
-          size={23}
-          color={active === 'memo' ? A.accent : A.faint}
-        />
-        <Text style={[s.tabLabel, active === 'memo' && s.tabLabelActive]}>メモ</Text>
-      </TouchableOpacity>
+      {renderTab('register', 'レジ', 'receipt-text', 'receipt-text-outline')}
+      {renderTab('summary', '集計', 'chart-box', 'chart-box-outline')}
+      {renderTab('memo', 'メモ', 'hand-heart', 'hand-heart-outline')}
     </View>
   );
 }
 
 // ─── レジタブ ──────────────────────────────────────────────────────────────────
-function RegisterTab({ items, inc, dec, setCount, resetCounts, openEdit }: {
+function RegisterTab({ items, inc, dec, setCount, resetCounts, openEdit, onAdd }: {
   items: Item[];
   inc: (id: string) => void;
   dec: (id: string) => void;
   setCount: (id: string, n: number) => void;
   resetCounts: () => void;
   openEdit: (item: Item) => void;
+  onAdd: () => void;
 }) {
   const searchField = useIMEField('');
   const searchQuery = searchField.value;
-  const [sortBy, setSortBy] = useState<'name' | 'price' | 'revenue'>('name');
+  const searchFocus = useFocusRing();
+  const quickFocus = useFocusRing();
+  const [sortBy, setSortBy] = useState<'name' | 'price'>('name');
   const [quickEdit, setQuickEdit] = useState<Item | null>(null);
   const [quickEditValue, setQuickEditValue] = useState('');
   const [confirmReset, setConfirmReset] = useState(false);
@@ -134,9 +128,7 @@ function RegisterTab({ items, inc, dec, setCount, resetCounts, openEdit }: {
 
   let list = items.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()));
   list = [...list].sort((a, b) =>
-    sortBy === 'name'    ? a.name.localeCompare(b.name, 'ja') :
-    sortBy === 'price'   ? b.price - a.price :
-    b.price * b.count - a.price * a.count
+    sortBy === 'name' ? a.name.localeCompare(b.name, 'ja') : b.price - a.price
   );
 
   const renderItem = ({ item }: { item: Item }) => (
@@ -190,9 +182,14 @@ function RegisterTab({ items, inc, dec, setCount, resetCounts, openEdit }: {
               <Text style={s.totalValue}>{num(total)}</Text>
             </View>
           </View>
-          <TouchableOpacity style={s.iconBtn} onPress={() => setConfirmReset(true)} activeOpacity={0.7}>
-            <MaterialCommunityIcons name="refresh" size={18} color={A.muted} />
-          </TouchableOpacity>
+          <View style={s.headerBtns}>
+            <TouchableOpacity style={s.addHeaderBtn} onPress={onAdd} activeOpacity={0.85}>
+              <MaterialCommunityIcons name="plus" size={22} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity style={s.iconBtn} onPress={() => setConfirmReset(true)} activeOpacity={0.7}>
+              <MaterialCommunityIcons name="refresh" size={18} color={A.muted} />
+            </TouchableOpacity>
+          </View>
         </View>
         <View style={s.statsRow}>
           <Text style={s.stat}>販売 <Text style={s.statBold}>{units}</Text> 点</Text>
@@ -200,33 +197,40 @@ function RegisterTab({ items, inc, dec, setCount, resetCounts, openEdit }: {
         </View>
       </View>
 
-      {/* 検索・ソート */}
-      <View style={s.searchBarRow}>
-        <View style={s.searchBox}>
-          <MaterialCommunityIcons name="magnify" size={16} color={A.faint} />
+      {/* 検索・並び替え */}
+      <View style={s.toolArea}>
+        <View style={[s.searchBox, searchFocus.focused && s.fieldFocused]}>
+          <MaterialCommunityIcons name="magnify" size={19} color={searchFocus.focused ? A.accent : A.muted} />
           <IMETextInput
             defaultValue={searchField.initial}
             onChangeText={searchField.onChangeText}
             onEndEditing={searchField.commit}
             onSubmitEditing={searchField.commit}
+            onFocus={searchFocus.onFocus}
+            onBlur={searchFocus.onBlur}
             returnKeyType="search"
             placeholder="商品を検索"
             placeholderTextColor={A.faint}
             style={s.searchInput}
           />
         </View>
-        {(['name', 'price', 'revenue'] as const).map(sv => (
-          <TouchableOpacity
-            key={sv}
-            style={[s.sortChip, sortBy === sv && s.sortChipActive]}
-            onPress={() => setSortBy(sv)}
-            activeOpacity={0.7}
-          >
-            <Text style={[s.sortChipText, sortBy === sv && s.sortChipTextActive]}>
-              {sv === 'name' ? '名前' : sv === 'price' ? '価格' : '売上'}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        <View style={s.sortRow}>
+          <Text style={s.sortLabel}>並び替え</Text>
+          <View style={s.sortSegment}>
+            {(['name', 'price'] as const).map(sv => (
+              <TouchableOpacity
+                key={sv}
+                style={[s.sortSeg, sortBy === sv && s.sortSegActive]}
+                onPress={() => setSortBy(sv)}
+                activeOpacity={0.7}
+              >
+                <Text style={[s.sortSegText, sortBy === sv && s.sortSegTextActive]}>
+                  {sv === 'name' ? '名前' : '価格'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
       </View>
 
       {/* 商品リスト */}
@@ -240,6 +244,12 @@ function RegisterTab({ items, inc, dec, setCount, resetCounts, openEdit }: {
             <Text style={s.emptyText}>
               {searchQuery ? '該当する商品がありません' : '商品がまだ登録されていません'}
             </Text>
+            {!searchQuery && (
+              <TouchableOpacity style={s.emptyCta} onPress={onAdd} activeOpacity={0.85}>
+                <MaterialCommunityIcons name="plus" size={18} color="#fff" />
+                <Text style={s.emptyCtaText}>商品を登録</Text>
+              </TouchableOpacity>
+            )}
           </View>
         }
       />
@@ -251,8 +261,10 @@ function RegisterTab({ items, inc, dec, setCount, resetCounts, openEdit }: {
         <TextInput
           value={quickEditValue}
           onChangeText={v => setQuickEditValue(v.replace(/[^0-9]/g, ''))}
+          onFocus={quickFocus.onFocus}
+          onBlur={quickFocus.onBlur}
           keyboardType="numeric"
-          style={s.modalNumInput}
+          style={[s.modalNumInput, quickFocus.focused && s.fieldFocused]}
           autoFocus
           selectTextOnFocus
         />
@@ -293,13 +305,16 @@ function RegisterTab({ items, inc, dec, setCount, resetCounts, openEdit }: {
 
 // ─── 集計タブ ──────────────────────────────────────────────────────────────────
 function SummaryTab({ items }: { items: Item[] }) {
-  const ranked = [...items]
-    .map(i => ({ ...i, rev: i.price * (i.count || 0) }))
-    .sort((a, b) => b.rev - a.rev);
-  const max = Math.max(1, ...ranked.map(r => r.rev));
-  const total = ranked.reduce((s, r) => s + r.rev, 0);
-  const units = ranked.reduce((s, r) => s + (r.count || 0), 0);
-  const best = ranked[0];
+  const [sortBy, setSortBy] = useState<'revenue' | 'count'>('revenue');
+  const withRev = items.map(i => ({ ...i, rev: i.price * (i.count || 0) }));
+  const ranked = [...withRev].sort((a, b) =>
+    sortBy === 'revenue' ? b.rev - a.rev : (b.count || 0) - (a.count || 0)
+  );
+  const maxRev = Math.max(1, ...withRev.map(r => r.rev));
+  const maxCount = Math.max(1, ...withRev.map(r => r.count || 0));
+  const total = withRev.reduce((s, r) => s + r.rev, 0);
+  const units = withRev.reduce((s, r) => s + (r.count || 0), 0);
+  const best = [...withRev].sort((a, b) => b.rev - a.rev)[0]; // ベストセラーは売上基準で固定
 
   return (
     <ScrollView contentContainerStyle={s.summaryScroll} showsVerticalScrollIndicator={false}>
@@ -329,26 +344,46 @@ function SummaryTab({ items }: { items: Item[] }) {
         </View>
       )}
 
-      {/* 商品別ランキング */}
-      <Text style={s.sectionLabel}>商品別の売上</Text>
+      {/* 商品別ランキング（売上順／個数順を切替） */}
+      <View style={[s.sortRow, { marginTop: 26, marginBottom: 10 }]}>
+        <Text style={s.sortLabel}>商品別</Text>
+        <View style={s.sortSegment}>
+          {(['revenue', 'count'] as const).map(sv => (
+            <TouchableOpacity
+              key={sv}
+              style={[s.sortSeg, sortBy === sv && s.sortSegActive]}
+              onPress={() => setSortBy(sv)}
+              activeOpacity={0.7}
+            >
+              <Text style={[s.sortSegText, sortBy === sv && s.sortSegTextActive]}>
+                {sv === 'revenue' ? '売上順' : '個数順'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
       {ranked.length === 0 ? (
         <View style={s.empty}>
           <Text style={s.emptyText}>販売データがありません</Text>
         </View>
-      ) : ranked.map(r => (
-        <View key={r.id} style={s.rankRow}>
-          <View style={s.rankHeader}>
-            <Text style={s.rankName} numberOfLines={1}>{r.name}</Text>
-            <Text style={s.rankRevenue}>{yen(r.rev)}</Text>
-          </View>
-          <View style={s.barRow}>
-            <View style={s.barTrack}>
-              <View style={[s.barFill, { width: `${(r.rev / max) * 100}%` as any }]} />
+      ) : ranked.map(r => {
+        const metric = sortBy === 'revenue' ? r.rev : (r.count || 0);
+        const maxMetric = sortBy === 'revenue' ? maxRev : maxCount;
+        return (
+          <View key={r.id} style={s.rankRow}>
+            <View style={s.rankHeader}>
+              <Text style={s.rankName} numberOfLines={1}>{r.name}</Text>
+              <Text style={s.rankRevenue}>{yen(r.rev)}</Text>
             </View>
-            <Text style={s.rankCount}>{r.count}点</Text>
+            <View style={s.barRow}>
+              <View style={s.barTrack}>
+                <View style={[s.barFill, { width: `${(metric / maxMetric) * 100}%` as any }]} />
+              </View>
+              <Text style={s.rankCount}>{r.count}点</Text>
+            </View>
           </View>
-        </View>
-      ))}
+        );
+      })}
     </ScrollView>
   );
 }
@@ -362,6 +397,7 @@ function MemoTab({ memos, addMemo, updateMemo, removeMemo }: {
 }) {
   const [editing, setEditing] = useState<Memo | null>(null);
   const [isNew, setIsNew] = useState(false);
+  const memoFocus = useFocusRing();
   // 打鍵ごとの再描画（=IME中断・一覧のカクつき）を避けるため draft は ref で保持
   const draftRef = React.useRef('');
 
@@ -422,9 +458,11 @@ function MemoTab({ memos, addMemo, updateMemo, removeMemo }: {
           key={editing ? editing.id : 'new'}
           defaultValue={editing ? editing.text : ''}
           onChangeText={t => { draftRef.current = t; }}
+          onFocus={memoFocus.onFocus}
+          onBlur={memoFocus.onBlur}
           placeholder="例：◯◯さんに新刊を1冊寄贈／△△と既刊を交換"
           placeholderTextColor={A.faint}
-          style={s.memoInput}
+          style={[s.memoInput, memoFocus.focused && s.fieldFocused]}
           multiline
           autoFocus
         />
@@ -515,6 +553,7 @@ const MainScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             items={items}
             inc={inc} dec={dec} setCount={setCount}
             resetCounts={resetCounts} openEdit={openEdit}
+            onAdd={() => navigation.navigate('AddItem')}
           />
         )}
         {tab === 'summary' && <SummaryTab items={items} />}
@@ -528,11 +567,7 @@ const MainScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         )}
       </SafeAreaView>
 
-      <BottomTabBar
-        active={tab}
-        onTab={setTab}
-        onAdd={() => navigation.navigate('AddItem')}
-      />
+      <BottomTabBar active={tab} onTab={setTab} />
     </View>
   );
 };
@@ -552,15 +587,13 @@ const s = StyleSheet.create({
   tabItem: {
     flex: 1, alignItems: 'center', gap: 5,
   },
-  tabLabel: { fontSize: 12, color: A.muted, fontWeight: '500', letterSpacing: 0.2 },
-  tabLabelActive: { color: A.accent, fontWeight: '700' },
-  tabCenter: { flex: 1, alignItems: 'center', gap: 5 },
-  centerBtn: {
-    width: 50, height: 50, borderRadius: 25,
-    backgroundColor: A.accent, marginTop: -6,
+  tabIcon: {
+    width: 44, height: 44, borderRadius: 22,
     alignItems: 'center', justifyContent: 'center',
   },
-  centerLabel: { fontSize: 12, color: A.muted, fontWeight: '600', letterSpacing: 0.2 },
+  tabIconActive: { backgroundColor: A.accentSoft },
+  tabLabel: { fontSize: 12, color: A.muted, fontWeight: '500', letterSpacing: 0.2 },
+  tabLabelActive: { color: A.accent, fontWeight: '700' },
 
   // ── レジヘッダー
   headerArea: { paddingHorizontal: 24, paddingTop: 20 },
@@ -576,10 +609,15 @@ const s = StyleSheet.create({
   },
   yenSign: { paddingRight: 5 },
   yenSignText: { fontSize: 33, fontWeight: '600', color: A.faint },
+  headerBtns: { flexDirection: 'row', gap: 8, marginTop: 6 },
+  addHeaderBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: A.accent, alignItems: 'center', justifyContent: 'center',
+  },
   iconBtn: {
     width: 40, height: 40, borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth, borderColor: A.line,
-    backgroundColor: A.surface, alignItems: 'center', justifyContent: 'center', marginTop: 6,
+    backgroundColor: A.surface, alignItems: 'center', justifyContent: 'center',
   },
   statsRow: {
     flexDirection: 'row', gap: 18, marginTop: 16, paddingBottom: 18,
@@ -588,27 +626,28 @@ const s = StyleSheet.create({
   stat: { fontSize: 15, color: A.muted },
   statBold: { color: A.ink, fontWeight: '700' },
 
-  // ── 検索・ソート
-  searchBarRow: {
-    flexDirection: 'row', gap: 8,
-    paddingHorizontal: 24, paddingTop: 14, paddingBottom: 10,
-    alignItems: 'center',
+  // ── 検索・並び替え
+  toolArea: {
+    paddingHorizontal: 24, paddingTop: 14, paddingBottom: 12, gap: 12,
   },
   searchBox: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: A.bg,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: A.line,
-    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: A.field,
+    borderWidth: 1.5, borderColor: 'transparent',
+    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11,
   },
+  fieldFocused: { borderColor: A.accent, backgroundColor: A.accentSoft },
   searchInput: { flex: 1, fontSize: 16, color: A.ink, padding: 0 },
-  sortChip: {
-    borderWidth: StyleSheet.hairlineWidth, borderColor: A.line,
-    backgroundColor: A.surface, borderRadius: 10,
-    paddingHorizontal: 10, paddingVertical: 8,
+  sortRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  sortLabel: { fontSize: 13, color: A.muted, fontWeight: '600' },
+  sortSegment: {
+    flex: 1, flexDirection: 'row',
+    backgroundColor: A.field, borderRadius: 12, padding: 3,
   },
-  sortChipActive: { borderColor: A.accentLine, backgroundColor: A.accentSoft },
-  sortChipText: { fontSize: 13.5, color: A.muted, fontWeight: '500' },
-  sortChipTextActive: { color: A.accent, fontWeight: '700' },
+  sortSeg: { flex: 1, paddingVertical: 8, borderRadius: 9, alignItems: 'center' },
+  sortSegActive: { backgroundColor: A.surface },
+  sortSegText: { fontSize: 13.5, color: A.muted, fontWeight: '600' },
+  sortSegTextActive: { color: A.accent, fontWeight: '700' },
 
   // ── リスト行
   listContent: { paddingHorizontal: 16, paddingTop: 2, paddingBottom: 16 },
@@ -688,7 +727,7 @@ const s = StyleSheet.create({
   memoMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 10 },
   memoDate: { fontSize: 13, color: A.faint, fontVariant: ['tabular-nums'] as any },
   memoInput: {
-    width: '100%', minHeight: 96, borderWidth: 1, borderColor: A.line, borderRadius: 14,
+    width: '100%', minHeight: 96, borderWidth: 1.5, borderColor: A.line, borderRadius: 14,
     padding: 14, fontSize: 17, color: A.ink, marginTop: 14,
     textAlignVertical: 'top',
   },
@@ -701,6 +740,12 @@ const s = StyleSheet.create({
   // ── 空状態
   empty: { paddingTop: 64, paddingHorizontal: 24, alignItems: 'center' },
   emptyText: { fontSize: 16, color: A.faint, textAlign: 'center' },
+  emptyCta: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: 18, paddingHorizontal: 20, paddingVertical: 12,
+    borderRadius: 14, backgroundColor: A.accent,
+  },
+  emptyCtaText: { fontSize: 15, color: '#fff', fontWeight: '700' },
 
   // ── モーダル
   overlayBg: {
@@ -714,7 +759,7 @@ const s = StyleSheet.create({
   modalBody: { fontSize: 16, color: A.muted, lineHeight: 25, marginTop: 10, marginBottom: 4 },
   modalBodyBold: { color: A.ink, fontWeight: '700' },
   modalNumInput: {
-    width: '100%', borderWidth: 1, borderColor: A.line, borderRadius: 14,
+    width: '100%', borderWidth: 1.5, borderColor: A.line, borderRadius: 14,
     padding: 14, fontSize: 27, fontWeight: '700', color: A.ink, textAlign: 'center',
     fontVariant: ['tabular-nums'] as any,
   },
@@ -722,10 +767,10 @@ const s = StyleSheet.create({
   btnCancel: {
     flex: 1, padding: 14, borderRadius: 13,
     borderWidth: StyleSheet.hairlineWidth, borderColor: A.line,
-    backgroundColor: A.surface, alignItems: 'center',
+    backgroundColor: A.surface, alignItems: 'center', justifyContent: 'center',
   },
   btnCancelText: { fontSize: 16.5, color: A.muted, fontWeight: '600' },
-  btnAccent: { flex: 1, padding: 14, borderRadius: 13, backgroundColor: A.accent, alignItems: 'center' },
+  btnAccent: { flex: 1, padding: 14, borderRadius: 13, backgroundColor: A.accent, alignItems: 'center', justifyContent: 'center' },
   btnAccentText: { fontSize: 16.5, color: '#fff', fontWeight: '700' },
 });
 
