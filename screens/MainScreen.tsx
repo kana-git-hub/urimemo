@@ -19,6 +19,7 @@ import IMETextInput from '../components/IMETextInput';
 import { useIMEField } from '../hooks/useIMEField';
 import { useFocusRing } from '../hooks/useFocusRing';
 import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 
 const A = {
   bg: '#F4F6FB',
@@ -106,7 +107,7 @@ function BottomTabBar({ active, onTab }: {
 }
 
 // ─── レジタブ ──────────────────────────────────────────────────────────────────
-function RegisterTab({ items, inc, dec, setCount, openEdit, onAdd, onReorder }: {
+function RegisterTab({ items, inc, dec, setCount, openEdit, onAdd, onReorder, onDelete }: {
   items: Item[];
   inc: (id: string) => void;
   dec: (id: string) => void;
@@ -114,6 +115,7 @@ function RegisterTab({ items, inc, dec, setCount, openEdit, onAdd, onReorder }: 
   openEdit: (item: Item) => void;
   onAdd: () => void;
   onReorder: (items: Item[]) => void;
+  onDelete: (id: string) => void;
 }) {
   const searchField = useIMEField('');
   const searchQuery = searchField.value;
@@ -175,6 +177,14 @@ function RegisterTab({ items, inc, dec, setCount, openEdit, onAdd, onReorder }: 
     </View>
   );
 
+  // 左スワイプで右側に出る削除ボタン
+  const renderRightActions = (item: Item) => () => (
+    <TouchableOpacity style={s.swipeDelete} onPress={() => onDelete(item.id)} activeOpacity={0.85}>
+      <MaterialCommunityIcons name="trash-can-outline" size={22} color="#fff" />
+      <Text style={s.swipeDeleteText}>削除</Text>
+    </TouchableOpacity>
+  );
+
   const emptyComponent = (
     <View style={s.empty}>
       <Text style={s.emptyText}>
@@ -193,8 +203,8 @@ function RegisterTab({ items, inc, dec, setCount, openEdit, onAdd, onReorder }: 
     <View style={{ flex: 1 }}>
       {/* 売上ヘッダー */}
       <View style={s.headerArea}>
-        <View style={s.totalRow}>
-          <View>
+        <View style={s.screenHeader}>
+          <View style={{ flex: 1 }}>
             <Text style={s.totalLabel}>本日の売上</Text>
             <View style={s.totalAmountRow}>
               <View style={s.yenSign}>
@@ -203,8 +213,9 @@ function RegisterTab({ items, inc, dec, setCount, openEdit, onAdd, onReorder }: 
               <Text style={s.totalValue}>{num(total)}</Text>
             </View>
           </View>
-          <TouchableOpacity style={[s.addHeaderBtn, { marginTop: 6 }]} onPress={onAdd} activeOpacity={0.85}>
-            <MaterialCommunityIcons name="plus" size={22} color="#fff" />
+          <TouchableOpacity style={s.headerPill} onPress={onAdd} activeOpacity={0.7}>
+            <MaterialCommunityIcons name="tag-plus-outline" size={17} color={A.accent} />
+            <Text style={s.headerPillText}>商品登録</Text>
           </TouchableOpacity>
         </View>
         <View style={s.statsRow}>
@@ -238,7 +249,15 @@ function RegisterTab({ items, inc, dec, setCount, openEdit, onAdd, onReorder }: 
           style={s.list}
           data={list}
           keyExtractor={i => i.id}
-          renderItem={({ item }) => renderRow(item)}
+          renderItem={({ item }) => (
+            <ReanimatedSwipeable
+              renderRightActions={renderRightActions(item)}
+              overshootRight={false}
+              rightThreshold={40}
+            >
+              {renderRow(item)}
+            </ReanimatedSwipeable>
+          )}
           contentContainerStyle={s.listContent}
           keyboardShouldPersistTaps="handled"
           ListEmptyComponent={emptyComponent}
@@ -252,7 +271,14 @@ function RegisterTab({ items, inc, dec, setCount, openEdit, onAdd, onReorder }: 
           onDragEnd={({ data }) => onReorder(data)}
           renderItem={({ item, drag, isActive }) => (
             <ScaleDecorator activeScale={1.03}>
-              {renderRow(item, drag, isActive)}
+              <ReanimatedSwipeable
+                renderRightActions={renderRightActions(item)}
+                overshootRight={false}
+                rightThreshold={40}
+                enabled={!isActive}
+              >
+                {renderRow(item, drag, isActive)}
+              </ReanimatedSwipeable>
             </ScaleDecorator>
           )}
           contentContainerStyle={s.listContent}
@@ -308,11 +334,11 @@ function SummaryTab({ items, resetCounts }: { items: Item[]; resetCounts: () => 
 
   return (
     <ScrollView contentContainerStyle={s.summaryScroll} showsVerticalScrollIndicator={false}>
-      <View style={s.summaryHeader}>
+      <View style={[s.screenHeader, { marginBottom: 18 }]}>
         <Text style={[s.pageTitle, { marginBottom: 0 }]}>集計</Text>
-        <TouchableOpacity style={s.resetBtn} onPress={() => setConfirmReset(true)} activeOpacity={0.8}>
-          <MaterialCommunityIcons name="refresh" size={16} color={A.accent} />
-          <Text style={s.resetBtnText}>リセット</Text>
+        <TouchableOpacity style={s.headerPill} onPress={() => setConfirmReset(true)} activeOpacity={0.7}>
+          <MaterialCommunityIcons name="refresh" size={17} color={A.accent} />
+          <Text style={s.headerPillText}>リセット</Text>
         </TouchableOpacity>
       </View>
 
@@ -409,13 +435,14 @@ function MemoTab({ memos, addMemo, updateMemo, removeMemo }: {
 }) {
   const [editing, setEditing] = useState<Memo | null>(null);
   const [isNew, setIsNew] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
   const memoFocus = useFocusRing();
   // 打鍵ごとの再描画（=IME中断・一覧のカクつき）を避けるため draft は ref で保持
   const draftRef = React.useRef('');
 
-  const openNew = () => { draftRef.current = ''; setEditing(null); setIsNew(true); };
-  const openEdit = (m: Memo) => { draftRef.current = m.text; setEditing(m); setIsNew(false); };
-  const close = () => { draftRef.current = ''; setEditing(null); setIsNew(false); };
+  const openNew = () => { draftRef.current = ''; setConfirmDel(false); setEditing(null); setIsNew(true); };
+  const openEdit = (m: Memo) => { draftRef.current = m.text; setConfirmDel(false); setEditing(m); setIsNew(false); };
+  const close = () => { draftRef.current = ''; setConfirmDel(false); setEditing(null); setIsNew(false); };
 
   const save = () => {
     const text = draftRef.current.trim();
@@ -431,12 +458,13 @@ function MemoTab({ memos, addMemo, updateMemo, removeMemo }: {
   return (
     <View style={{ flex: 1 }}>
       <View style={s.memoHeader}>
-        <View style={{ flex: 1 }}>
-          <Text style={s.pageTitle}>寄贈・交換メモ</Text>
+        <View style={{ flex: 1, marginRight: 12 }}>
+          <Text style={[s.pageTitle, { marginBottom: 4 }]}>寄贈・交換メモ</Text>
           <Text style={s.memoSubtitle}>お渡しした本や交換の記録を残せます</Text>
         </View>
-        <TouchableOpacity style={s.memoAddBtn} onPress={openNew} activeOpacity={0.85}>
-          <MaterialCommunityIcons name="plus" size={22} color="#fff" />
+        <TouchableOpacity style={s.headerPill} onPress={openNew} activeOpacity={0.7}>
+          <MaterialCommunityIcons name="note-plus-outline" size={17} color={A.accent} />
+          <Text style={s.headerPillText}>メモ追加</Text>
         </TouchableOpacity>
       </View>
 
@@ -465,36 +493,50 @@ function MemoTab({ memos, addMemo, updateMemo, removeMemo }: {
       />
 
       <HakModal visible={modalVisible} onClose={close}>
-        <Text style={s.modalTitle}>{editing ? 'メモを編集' : 'メモを追加'}</Text>
-        <TextInput
-          key={editing ? editing.id : 'new'}
-          defaultValue={editing ? editing.text : ''}
-          onChangeText={t => { draftRef.current = t; }}
-          onFocus={memoFocus.onFocus}
-          onBlur={memoFocus.onBlur}
-          placeholder="例：◯◯さんに新刊を1冊寄贈／△△と既刊を交換"
-          placeholderTextColor={A.faint}
-          style={[s.memoInput, memoFocus.focused && s.fieldFocused]}
-          multiline
-          autoFocus
-        />
-        <View style={s.modalActions}>
-          {editing ? (
-            <TouchableOpacity
-              style={s.memoDeleteBtn}
-              onPress={() => { removeMemo(editing.id); close(); }}
-            >
-              <MaterialCommunityIcons name="trash-can-outline" size={20} color={A.accent} />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={s.btnCancel} onPress={close}>
-              <Text style={s.btnCancelText}>キャンセル</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity style={s.btnAccent} onPress={save}>
-            <Text style={s.btnAccentText}>{editing ? '保存' : '追加'}</Text>
-          </TouchableOpacity>
-        </View>
+        {confirmDel && editing ? (
+          <>
+            <Text style={s.modalTitle}>メモを削除</Text>
+            <Text style={s.modalBody}>このメモを削除します。この操作は取り消せません。</Text>
+            <View style={s.modalActions}>
+              <TouchableOpacity style={s.btnCancel} onPress={() => setConfirmDel(false)}>
+                <Text style={s.btnCancelText}>キャンセル</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.btnAccent} onPress={() => { removeMemo(editing.id); close(); }}>
+                <Text style={s.btnAccentText}>削除</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        ) : (
+          <>
+            <Text style={s.modalTitle}>{editing ? 'メモを編集' : 'メモを追加'}</Text>
+            <TextInput
+              key={editing ? editing.id : 'new'}
+              defaultValue={editing ? editing.text : ''}
+              onChangeText={t => { draftRef.current = t; }}
+              onFocus={memoFocus.onFocus}
+              onBlur={memoFocus.onBlur}
+              placeholder="例：◯◯さんに新刊を1冊寄贈／△△と既刊を交換"
+              placeholderTextColor={A.faint}
+              style={[s.memoInput, memoFocus.focused && s.fieldFocused]}
+              multiline
+              autoFocus
+            />
+            <View style={s.modalActions}>
+              {editing ? (
+                <TouchableOpacity style={s.memoDeleteBtn} onPress={() => setConfirmDel(true)}>
+                  <MaterialCommunityIcons name="trash-can-outline" size={20} color={A.accent} />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={s.btnCancel} onPress={close}>
+                  <Text style={s.btnCancelText}>キャンセル</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={s.btnAccent} onPress={save}>
+                <Text style={s.btnAccentText}>{editing ? '保存' : '追加'}</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
       </HakModal>
     </View>
   );
@@ -551,6 +593,8 @@ const MainScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     saveItems(items.map(i => i.id === id ? { ...i, count } : i));
   const resetCounts = () =>
     saveItems(items.map(i => ({ ...i, count: 0 })));
+  const deleteItem = (id: string) =>
+    saveItems(items.filter(i => i.id !== id));
 
   const openEdit = (item: Item) => {
     const index = items.findIndex(i => i.id === item.id);
@@ -567,6 +611,7 @@ const MainScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             openEdit={openEdit}
             onAdd={() => navigation.navigate('AddItem')}
             onReorder={saveItems}
+            onDelete={deleteItem}
           />
         )}
         {tab === 'summary' && <SummaryTab items={items} resetCounts={resetCounts} />}
@@ -608,12 +653,16 @@ const s = StyleSheet.create({
   tabLabel: { fontSize: 12, color: A.muted, fontWeight: '500', letterSpacing: 0.2 },
   tabLabelActive: { color: A.accent, fontWeight: '700' },
 
+  // ── 各画面共通のヘッダー行（右上にアクションピルを同じ位置で固定）
+  screenHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
+  },
+
   // ── レジヘッダー
   headerArea: { paddingHorizontal: 24, paddingTop: 20 },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  totalLabel: { fontSize: 14, color: A.muted, fontWeight: '600', letterSpacing: 1.4 },
+  totalLabel: { fontSize: 13, color: A.muted, fontWeight: '700', letterSpacing: 1.6 },
   totalAmountRow: {
-    flexDirection: 'row', alignItems: 'baseline', marginTop: 8,
+    flexDirection: 'row', alignItems: 'baseline', marginTop: 6,
   },
   totalValue: {
     fontSize: 58, fontWeight: '700', color: A.ink,
@@ -622,10 +671,14 @@ const s = StyleSheet.create({
   },
   yenSign: { paddingRight: 5 },
   yenSignText: { fontSize: 33, fontWeight: '600', color: A.faint },
-  addHeaderBtn: {
-    width: 40, height: 40, borderRadius: 12,
-    backgroundColor: A.accent, alignItems: 'center', justifyContent: 'center',
+  // 各ヘッダーの「追加」アクション（リセットと同じピル：アイコン＋ラベル）
+  headerPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: A.accentLine,
+    backgroundColor: A.accentSoft,
   },
+  headerPillText: { fontSize: 14, fontWeight: '700', color: A.accent },
   statsRow: {
     flexDirection: 'row', gap: 18, marginTop: 16, paddingBottom: 18,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: A.line,
@@ -668,6 +721,11 @@ const s = StyleSheet.create({
   rowActive: {
     backgroundColor: A.surface, borderRadius: 14, borderBottomColor: 'transparent',
   },
+  swipeDelete: {
+    width: 84, backgroundColor: '#E5484D',
+    alignItems: 'center', justifyContent: 'center', gap: 3,
+  },
+  swipeDeleteText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   rowInfo: { flex: 1, minWidth: 0 },
   nameRow: { flexDirection: 'row', alignItems: 'center' },
   dragHandle: { marginRight: 6 },
@@ -719,27 +777,12 @@ const s = StyleSheet.create({
   barTrack: { flex: 1, height: 7, borderRadius: 3.5, backgroundColor: A.bg, overflow: 'hidden' },
   barFill: { height: '100%', borderRadius: 3.5, backgroundColor: A.accent },
   rankCount: { fontSize: 13.5, color: A.muted, fontVariant: ['tabular-nums'] as any, minWidth: 42, textAlign: 'right' },
-  summaryHeader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18,
-  },
-  resetBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 14, paddingVertical: 9, borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth, borderColor: A.accentLine,
-    backgroundColor: A.accentSoft,
-  },
-  resetBtnText: { fontSize: 14, fontWeight: '700', color: A.accent },
-
   // ── メモ
   memoHeader: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 24, paddingTop: 20, paddingBottom: 4,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
+    paddingHorizontal: 24, paddingTop: 20, paddingBottom: 6,
   },
-  memoSubtitle: { fontSize: 14, color: A.muted, marginTop: -8 },
-  memoAddBtn: {
-    width: 46, height: 46, borderRadius: 14, backgroundColor: A.accent,
-    alignItems: 'center', justifyContent: 'center',
-  },
+  memoSubtitle: { fontSize: 14, color: A.muted },
   memoListContent: { paddingHorizontal: 24, paddingTop: 14, paddingBottom: 16 },
   memoCard: {
     backgroundColor: A.surface,
